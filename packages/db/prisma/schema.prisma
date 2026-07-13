@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+enum DataSourceType {
+  POSTGRESQL
+  MYSQL
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         UserRole @default(USER)
+  refreshToken String?  @map("refresh_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  sessions        Session[]
+  dataSources     DataSource[]
+  dashboardCharts DashboardChart[]
+
+  @@map("users")
+}
+
+model DataSource {
+  id               String           @id @default(uuid())
+  userId           String           @map("user_id")
+  name             String
+  type             DataSourceType
+  host             String
+  port             Int
+  database         String           @default("")
+  username         String
+  password         String
+  isReadOnly       Boolean          @default(true) @map("is_read_only")
+  schemaDoc        String?          @map("schema_doc") @db.Text
+  connectionStatus ConnectionStatus @default(DISCONNECTED) @map("connection_status")
+  lastSyncAt       DateTime?        @map("last_sync_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@index([userId])
+  @@map("data_sources")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  dataSourceId String?  @map("data_source_id")
+  title        String   @default("新对话")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dataSource      DataSource?      @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+  messages        Message[]
+  agentCheckpoint AgentCheckpoint?
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("sessions")
+}
+
+model Message {
+  id          String      @id @default(uuid())
+  sessionId   String      @map("session_id")
+  role        MessageRole
+  content     String      @db.Text
+  sqlQuery    String?     @map("sql_query") @db.Text
+  chartConfig Json?       @map("chart_config")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  session         Session          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  dashboardCharts DashboardChart[]
+
+  @@index([sessionId, createdAt])
+  @@map("messages")
+}
+
+model DashboardChart {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  title           String
+  chartConfig     Json     @map("chart_config")
+  sourceMessageId String?  @map("source_message_id")
+  position        Json     @default("{\"x\":0,\"y\":0,\"w\":6,\"h\":4}")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceMessage Message? @relation(fields: [sourceMessageId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("dashboard_charts")
+}
+
+model AgentCheckpoint {
+  threadId  String   @id @map("thread_id")
+  sessionId String   @unique @map("session_id")
+  state     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("agent_checkpoints")
+}

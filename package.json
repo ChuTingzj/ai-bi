@@ -1,0 +1,22 @@
+{
+  "name": "ai-bi",
+  "private": true,
+  "version": "0.1.0",
+  "description": "DataMind AI-BI 企业级多智能体数据洞察平台",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "db:generate": "pnpm --filter @ai-bi/db generate",
+    "db:migrate": "pnpm --filter @ai-bi/db migrate:dev",
+    "db:deploy": "pnpm --filter @ai-bi/db migrate:deploy"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
