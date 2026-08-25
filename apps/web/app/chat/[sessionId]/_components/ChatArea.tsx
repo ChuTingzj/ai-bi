@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useRef } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AgentStep } from '@ai-bi/shared';
 import { useMessages } from '@/hooks/useSessions';
@@ -69,6 +69,12 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
   const { data: messagesData } = useMessages(sessionId);
   const { data: dataSources } = useDataSources();
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const defaultDataSourceId = dataSources?.[0]?.id;
 

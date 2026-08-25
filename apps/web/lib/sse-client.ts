@@ -7,7 +7,7 @@ export async function* streamChat(
   dataSourceId?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<SseEvent> {
-  const response = await fetch('/api/chat/stream', {
+  const response = await fetch('/sse/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

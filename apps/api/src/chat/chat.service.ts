@@ -23,6 +23,7 @@ export class ChatService {
   handleStream(dto: ChatStreamDto, user: UserPayload): Observable<SseMessage> {
     return new Observable<SseMessage>((subscriber) => {
       let aborted = false;
+      const abortController = new AbortController();
 
       (async () => {
         const session = await this.sessionService.assertOwner(
@@ -42,6 +43,14 @@ export class ChatService {
           },
         });
 
+        subscriber.next({
+          data: JSON.stringify({
+            type: 'status',
+            step: 'planning',
+            message: '正在理解您的问题...',
+          }),
+        });
+
         let fullContent = '';
         let chartConfig: Record<string, unknown> | null = null;
         let sqlQuery: string | null = null;
@@ -51,6 +60,7 @@ export class ChatService {
           question: dto.message,
           dataSourceId,
           userId: user.id,
+          signal: abortController.signal,
         });
 
         for await (const event of generator) {
@@ -69,7 +79,7 @@ export class ChatService {
             sessionId: dto.sessionId,
             role: 'ASSISTANT',
             content: fullContent,
-            chartConfig: chartConfig ?? undefined,
+            chartConfig: (chartConfig ?? undefined) as object | undefined,
             sqlQuery: sqlQuery ?? undefined,
           },
         });
@@ -80,6 +90,10 @@ export class ChatService {
         subscriber.next({ data: '[DONE]' });
         subscriber.complete();
       })().catch((err) => {
+        if (aborted || (err as Error).name === 'AbortError') {
+          if (!subscriber.closed) subscriber.complete();
+          return;
+        }
         this.logger.error(`Chat stream failed: ${err.message}`);
         subscriber.next({
           data: JSON.stringify({
@@ -94,6 +108,7 @@ export class ChatService {
 
       return () => {
         aborted = true;
+        abortController.abort();
       };
     });
   }

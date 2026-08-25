@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import type { SseEvent } from '@ai-bi/shared';
@@ -13,6 +14,23 @@ export interface WorkflowInput {
   question: string;
   dataSourceId: string;
   userId: string;
+  signal?: AbortSignal;
+}
+
+function chunkText(chunk: unknown): string {
+  if (!chunk || typeof chunk !== 'object') return '';
+  const content = (chunk as { content?: unknown }).content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      if (part && typeof part === 'object' && 'text' in part) {
+        return String((part as { text?: unknown }).text ?? '');
+      }
+      return '';
+    })
+    .join('');
 }
 
 const NODE_NAMES = new Set([
@@ -67,17 +85,20 @@ export class AgentService implements OnModuleInit {
       },
       {
         version: 'v2' as const,
-        configurable: { thread_id: input.sessionId },
+        signal: input.signal,
+        // 每次提问独立 checkpoint，避免上次未跑完的 thread 把新问题卡在半路节点
+        configurable: { thread_id: `${input.sessionId}:${randomUUID()}` },
       },
     );
 
     let retryCount = 0;
     let lastSql = '';
+    let lastSqlError = '';
 
     for await (const event of stream) {
       const nodeName = (event.metadata?.langgraph_node ?? event.name) as string;
 
-      // 节点开始：推送进度状态
+      // 节点开始：推送进度状态。用 event.name 避免嵌套 LLM runnable 重复触发
       if (event.event === 'on_chain_start' && NODE_NAMES.has(event.name)) {
         switch (event.name) {
           case 'planner':
@@ -119,9 +140,11 @@ export class AgentService implements OnModuleInit {
 
         if (event.name === 'sqlExecutor') {
           if (output.sql_error) {
+            lastSqlError = output.sql_error;
             retryCount = output.error_count ?? retryCount + 1;
             yield { type: 'sql', query: lastSql, status: 'error' };
           } else if (output.sql_result) {
+            lastSqlError = '';
             yield { type: 'sql', query: lastSql, status: 'success' };
           }
         }
@@ -131,7 +154,8 @@ export class AgentService implements OnModuleInit {
         }
 
         if (event.name === 'fallback') {
-          yield { type: 'error', code: '1003', message: FALLBACK_MESSAGE };
+          const detail = lastSqlError ? `\n\n最后一次错误：${lastSqlError}` : '';
+          yield { type: 'error', code: '1003', message: FALLBACK_MESSAGE + detail };
         }
       }
 
@@ -140,9 +164,7 @@ export class AgentService implements OnModuleInit {
         event.event === 'on_chat_model_stream' &&
         nodeName === 'analyst'
       ) {
-        const chunk = event.data?.chunk;
-        const content =
-          typeof chunk?.content === 'string' ? chunk.content : '';
+        const content = chunkText(event.data?.chunk);
         if (content) {
           yield { type: 'token', content };
         }

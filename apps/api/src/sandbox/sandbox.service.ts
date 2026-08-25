@@ -8,6 +8,15 @@ import { CryptoService } from '../common/crypto.service';
 const TIMEOUT_MS = parseInt(process.env.SANDBOX_TIMEOUT_MS ?? '10000', 10);
 const MEMORY_MB = parseInt(process.env.SANDBOX_MEMORY_MB ?? '128', 10);
 
+/** 沙盒跑在 Docker bridge 网络里，容器内的 127.0.0.1 不是宿主机 */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+
+export function resolveSandboxDbHost(host: string): string {
+  return LOOPBACK_HOSTS.has(host.trim().toLowerCase())
+    ? 'host.docker.internal'
+    : host;
+}
+
 @Injectable()
 export class SandboxService {
   private readonly logger = new Logger(SandboxService.name);
@@ -23,12 +32,13 @@ export class SandboxService {
 
     let container: Docker.Container | null = null;
     try {
+      const dbHost = resolveSandboxDbHost(dataSource.host);
       container = await this.docker.createContainer({
         Image: process.env.SANDBOX_IMAGE ?? 'ai-bi-sandbox:latest',
         Cmd: [sql],
         Env: [
           `DB_TYPE=${dataSource.type}`,
-          `DB_HOST=${dataSource.host}`,
+          `DB_HOST=${dbHost}`,
           `DB_PORT=${dataSource.port}`,
           `DB_USER=${dataSource.username}`,
           `DB_PASS=${this.crypto.decrypt(dataSource.password)}`,
@@ -41,6 +51,7 @@ export class SandboxService {
           NanoCpus: 0.5 * 1e9,
           // 需要访问目标数据库，使用 bridge；如目标库在宿主机内网，可配置自定义受限网络
           NetworkMode: 'bridge',
+          ExtraHosts: ['host.docker.internal:host-gateway'],
           AutoRemove: false,
         },
       });
@@ -73,6 +84,7 @@ export class SandboxService {
       } catch {
         // stderr 非 JSON 时按原文返回
       }
+      this.logger.warn(`Sandbox SQL failed: ${errorMessage}`);
       return { success: false, error: errorMessage };
     } catch (err) {
       this.logger.error(`Sandbox execution failed: ${(err as Error).message}`);

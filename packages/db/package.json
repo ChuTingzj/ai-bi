@@ -5,10 +5,10 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "generate": "prisma generate",
-    "migrate:dev": "prisma migrate dev",
-    "migrate:deploy": "prisma migrate deploy",
-    "studio": "prisma studio"
+    "generate": "node --env-file=../../.env ./node_modules/prisma/build/index.js generate",
+    "migrate:dev": "node --env-file=../../.env ./node_modules/prisma/build/index.js migrate dev",
+    "migrate:deploy": "node --env-file=../../.env ./node_modules/prisma/build/index.js migrate deploy",
+    "studio": "node --env-file=../../.env ./node_modules/prisma/build/index.js studio"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"

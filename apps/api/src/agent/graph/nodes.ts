@@ -154,11 +154,8 @@ export function createNodes(deps: NodeDeps) {
     return {};
   }
 
-  /** Analyst Agent：由 AgentService 在 Graph 完成后调用，流式输出业务洞察 */
-  async function* streamAnalysis(state: {
-    question: string;
-    sql_result: BiAgentState['sql_result'];
-  }): AsyncGenerator<string> {
+  /** Analyst Agent：图内调用 LLM，streamEvents 会转发 on_chat_model_stream */
+  async function analystNode(state: BiAgentState) {
     const resultSummary = JSON.stringify({
       columns: state.sql_result?.columns,
       rowCount: state.sql_result?.rowCount,
@@ -166,17 +163,14 @@ export function createNodes(deps: NodeDeps) {
     });
 
     const model = llm.create({ streaming: true });
-    const stream = await model.stream([
+    await model.invoke([
       new SystemMessage(ANALYST_SYSTEM_PROMPT),
       new HumanMessage(
         `用户问题：${state.question}\n查询结果摘要：${resultSummary}`,
       ),
     ]);
 
-    for await (const chunk of stream) {
-      const text = typeof chunk.content === 'string' ? chunk.content : '';
-      if (text) yield text;
-    }
+    return {};
   }
 
   return {
@@ -185,7 +179,7 @@ export function createNodes(deps: NodeDeps) {
     sqlGeneratorNode,
     sqlExecutorNode,
     chartGeneratorNode,
+    analystNode,
     fallbackNode,
-    streamAnalysis,
   };
 }
