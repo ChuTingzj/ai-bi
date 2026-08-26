@@ -6,7 +6,8 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "benchmark:run": "tsx src/benchmark/cli.ts"
   },
   "dependencies": {
     "@ai-bi/db": "workspace:*",
@@ -42,6 +43,8 @@
     "@types/node": "^22.0.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.11.0",
-    "typescript": "^5.6.0"
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "yaml": "^2.6.0"
   }
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import type { SseEvent } from '@ai-bi/shared';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,7 +7,7 @@ import { SandboxService } from '../sandbox/sandbox.service';
 import { LlmService } from './llm.service';
 import { buildBiAgentGraph } from './graph/bi-agent.graph';
 import { FALLBACK_MESSAGE } from './graph/prompts';
-import type { BiAgentState } from './graph/state';
+import type { BiAgentState, BenchmarkRunResult } from './graph/state';
 
 export interface WorkflowInput {
   sessionId: string;
@@ -49,9 +49,9 @@ export class AgentService implements OnModuleInit {
   private compiledGraph: ReturnType<typeof buildBiAgentGraph>;
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly sandbox: SandboxService,
-    private readonly llm: LlmService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(SandboxService) private readonly sandbox: SandboxService,
+    @Inject(LlmService) private readonly llm: LlmService,
   ) {}
 
   async onModuleInit() {
@@ -170,5 +170,98 @@ export class AgentService implements OnModuleInit {
         }
       }
     }
+  }
+
+  /** Benchmark-only: runs workflow and returns structured artifact (no SSE). */
+  async runBenchmarkCase(input: WorkflowInput): Promise<BenchmarkRunResult> {
+    const startedAt = Date.now();
+    const nodeStarts = new Map<string, number>();
+    const latencies: Record<string, number> = {};
+
+    let intent: BenchmarkRunResult['intent'] = null;
+    let relevant_tables: string[] = [];
+    let generated_sql = '';
+    let sql_result: BenchmarkRunResult['sql_result'] = null;
+    let sql_error: string | null = null;
+    let error_count = 0;
+    let chart_config: BenchmarkRunResult['chart_config'] = null;
+    let analyst_text = '';
+    let fallback = false;
+    let sql_attempts = 0;
+
+    const stream = this.compiledGraph.streamEvents(
+      {
+        question: input.question,
+        data_source_id: input.dataSourceId,
+        session_id: input.sessionId,
+        error_count: 0,
+        sql_result: null,
+        sql_error: null,
+        chart_config: null,
+      },
+      {
+        version: 'v2' as const,
+        signal: input.signal,
+        configurable: { thread_id: `${input.sessionId}:benchmark:${randomUUID()}` },
+      },
+    );
+
+    for await (const event of stream) {
+      const nodeName = (event.metadata?.langgraph_node ?? event.name) as string;
+
+      if (event.event === 'on_chain_start' && NODE_NAMES.has(event.name)) {
+        nodeStarts.set(event.name, Date.now());
+      }
+
+      if (event.event === 'on_chain_end' && NODE_NAMES.has(event.name)) {
+        const start = nodeStarts.get(event.name);
+        if (start) latencies[event.name] = Date.now() - start;
+
+        const output = (event.data?.output ?? {}) as Partial<BiAgentState>;
+
+        if (event.name === 'planner') {
+          intent = output.intent ?? null;
+          relevant_tables = output.relevant_tables ?? [];
+        }
+        if (event.name === 'sqlGenerator' && output.generated_sql) {
+          generated_sql = output.generated_sql;
+          sql_attempts += 1;
+        }
+        if (event.name === 'sqlExecutor') {
+          if (output.sql_error) {
+            sql_error = output.sql_error;
+            error_count = output.error_count ?? error_count + 1;
+          } else if (output.sql_result) {
+            sql_result = output.sql_result;
+            sql_error = null;
+          }
+        }
+        if (event.name === 'chartGenerator' && output.chart_config) {
+          chart_config = output.chart_config;
+        }
+        if (event.name === 'fallback') {
+          fallback = true;
+        }
+      }
+
+      if (event.event === 'on_chat_model_stream' && nodeName === 'analyst') {
+        analyst_text += chunkText(event.data?.chunk);
+      }
+    }
+
+    return {
+      intent,
+      relevant_tables,
+      generated_sql,
+      sql_result,
+      sql_error,
+      error_count,
+      chart_config,
+      analyst_text,
+      fallback,
+      sql_attempts,
+      latencies_ms: latencies,
+      total_latency_ms: Date.now() - startedAt,
+    };
   }
 }

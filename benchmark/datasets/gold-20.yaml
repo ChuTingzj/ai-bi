@@ -1,0 +1,331 @@
+cases:
+  # ── L1: 单表聚合 / TopN / 占比 ──────────────────────────────
+
+  - id: BI-L1-001
+    level: L1
+    question: "最近 30 天每天的订单总金额是多少？"
+    expected_tables: [orders]
+    expected_chart_type: line
+    gold_sql: |
+      SELECT DATE(created_at) AS day, SUM(total_amount) AS total_amount
+      FROM orders
+      WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+        AND status = 'completed'
+      GROUP BY DATE(created_at)
+      ORDER BY day
+    result_tolerance:
+      numeric_tolerance: 0.01
+    analyst_keywords: ["订单", "金额", "30"]
+
+  - id: BI-L1-002
+    level: L1
+    question: "销售额最高的 10 个商品是哪些？"
+    expected_tables: [order_items, products]
+    expected_chart_type: bar
+    gold_sql: |
+      SELECT p.name AS product_name, SUM(oi.amount) AS total_sales
+      FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.status = 'completed'
+      GROUP BY p.id, p.name
+      ORDER BY total_sales DESC
+      LIMIT 10
+    result_tolerance:
+      numeric_tolerance: 0.01
+    analyst_keywords: ["商品", "销售", "Top"]
+
+  - id: BI-L1-003
+    level: L1
+    question: "各地区的订单数量分布"
+    expected_tables: [orders, users, regions]
+    expected_chart_type: bar
+    gold_sql: |
+      SELECT r.name AS region_name, COUNT(o.id) AS order_count
+      FROM orders o
+      JOIN users u ON o.user_id = u.id
+      JOIN regions r ON u.region_id = r.id
+      WHERE o.status = 'completed'
+      GROUP BY r.id, r.name
+      ORDER BY order_count DESC
+    result_tolerance:
+      numeric_tolerance: 0.01
+    analyst_keywords: ["地区", "订单"]
+
+  - id: BI-L1-004
+    level: L1
+    question: "本月新增用户数是多少？"
+    expected_tables: [users]
+    expected_chart_type: table
+    gold_sql: |
+      SELECT COUNT(*) AS new_users
+      FROM users
+      WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)
+    result_tolerance:
+      numeric_tolerance: 0
+    analyst_keywords: ["用户", "新增", "本月"]
+
+  - id: BI-L1-005
+    level: L1
+    question: "订单状态为 cancelled 的订单占比是多少？"
+    expected_tables: [orders]
+    expected_chart_type: pie
+    gold_sql: |
+      SELECT
+        ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'cancelled') / NULLIF(COUNT(*), 0), 2) AS cancelled_pct
+      FROM orders
+    result_tolerance:
+      numeric_tolerance: 0.05
+    analyst_keywords: ["cancelled", "取消", "占比"]
+
+  - id: BI-L1-006
+    level: L1
+    question: "最近 7 天每天的订单数量"
+    expected_tables: [orders]
+    expected_chart_type: line
+    gold_sql: |
+      SELECT DATE(created_at) AS day, COUNT(*) AS order_count
+      FROM orders
+      WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+      GROUP BY DATE(created_at)
+      ORDER BY day
+    result_tolerance:
+      numeric_tolerance: 0
+    analyst_keywords: ["订单", "7天", "每天"]
+
+  - id: BI-L1-007
+    level: L1
+    question: "各商品类目有多少个商品？"
+    expected_tables: [products]
+    expected_chart_type: bar
+    gold_sql: |
+      SELECT category, COUNT(*) AS product_count
+      FROM products
+      GROUP BY category
+      ORDER BY product_count DESC
+    result_tolerance:
+      numeric_tolerance: 0
+    analyst_keywords: ["类目", "商品"]
+
+  - id: BI-L1-008
+    level: L1
+    question: "最近 8 周每周的客单价（GMV 除以订单数）"
+    expected_tables: [orders]
+    expected_chart_type: line
+    gold_sql: |
+      SELECT
+        DATE_TRUNC('week', created_at)::date AS week_start,
+        ROUND(SUM(total_amount) / NULLIF(COUNT(*), 0), 2) AS avg_order_value
+      FROM orders
+      WHERE created_at >= CURRENT_DATE - INTERVAL '8 weeks'
+        AND status = 'completed'
+      GROUP BY DATE_TRUNC('week', created_at)
+      ORDER BY week_start
+    result_tolerance:
+      numeric_tolerance: 0.02
+    analyst_keywords: ["客单价", "周"]
+
+  - id: BI-L1-009
+    level: L1
+    question: "订单金额超过 500 元的订单有多少笔？"
+    expected_tables: [orders]
+    expected_chart_type: table
+    gold_sql: |
+      SELECT COUNT(*) AS high_value_orders
+      FROM orders
+      WHERE total_amount > 500
+        AND status = 'completed'
+    result_tolerance:
+      numeric_tolerance: 0
+    analyst_keywords: ["500", "订单"]
+
+  - id: BI-L1-010
+    level: L1
+    question: "各注册渠道的用户数量"
+    expected_tables: [users]
+    expected_chart_type: bar
+    gold_sql: |
+      SELECT channel, COUNT(*) AS user_count
+      FROM users
+      GROUP BY channel
+      ORDER BY user_count DESC
+    result_tolerance:
+      numeric_tolerance: 0
+    analyst_keywords: ["渠道", "用户"]
+
+  - id: BI-L1-011
+    level: L1
+    question: "最近 14 天每天的 GMV 是多少？"
+    expected_tables: [daily_metrics]
+    expected_chart_type: line
+    gold_sql: |
+      SELECT metric_date, gmv
+      FROM daily_metrics
+      WHERE metric_date >= CURRENT_DATE - INTERVAL '14 days'
+      ORDER BY metric_date
+    result_tolerance:
+      numeric_tolerance: 0.01
+    analyst_keywords: ["GMV", "14"]
+
+  - id: BI-L1-012
+    level: L1
+    question: "已完成订单的平均金额是多少？"
+    expected_tables: [orders]
+    expected_chart_type: table
+    gold_sql: |
+      SELECT ROUND(AVG(total_amount), 2) AS avg_amount
+      FROM orders
+      WHERE status = 'completed'
+    result_tolerance:
+      numeric_tolerance: 0.02
+    analyst_keywords: ["平均", "金额", "完成"]
+
+  # ── L2: 多表 JOIN / 时间筛选 / 分组排名 ─────────────────────
+
+  - id: BI-L2-001
+    level: L2
+    question: "按商品类目统计近 7 天销售额"
+    expected_tables: [order_items, products, orders]
+    expected_chart_type: bar
+    gold_sql: |
+      SELECT p.category, SUM(oi.amount) AS total_sales
+      FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.created_at >= CURRENT_DATE - INTERVAL '7 days'
+        AND o.status = 'completed'
+      GROUP BY p.category
+      ORDER BY total_sales DESC
+    result_tolerance:
+      numeric_tolerance: 0.01
+    analyst_keywords: ["类目", "销售", "7天"]
+
+  - id: BI-L2-002
+    level: L2
+    question: "华东区销售额最高的 5 个商品是哪些？"
+    expected_tables: [order_items, products, orders, users, regions]
+    expected_chart_type: bar
+    gold_sql: |
+      SELECT p.name AS product_name, SUM(oi.amount) AS total_sales
+      FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      JOIN orders o ON oi.order_id = o.id
+      JOIN users u ON o.user_id = u.id
+      JOIN regions r ON u.region_id = r.id
+      WHERE r.name = '华东'
+        AND o.status = 'completed'
+      GROUP BY p.id, p.name
+      ORDER BY total_sales DESC
+      LIMIT 5
+    result_tolerance:
+      numeric_tolerance: 0.01
+    analyst_keywords: ["华东", "商品", "销售"]
+
+  - id: BI-L2-003
+    level: L2
+    question: "每个地区的订单总金额是多少？"
+    expected_tables: [orders, users, regions]
+    expected_chart_type: bar
+    gold_sql: |
+      SELECT r.name AS region_name, SUM(o.total_amount) AS total_gmv
+      FROM orders o
+      JOIN users u ON o.user_id = u.id
+      JOIN regions r ON u.region_id = r.id
+      WHERE o.status = 'completed'
+      GROUP BY r.id, r.name
+      ORDER BY total_gmv DESC
+    result_tolerance:
+      numeric_tolerance: 0.01
+    analyst_keywords: ["地区", "金额", "总"]
+
+  - id: BI-L2-004
+    level: L2
+    question: "购买次数最多的 Top10 用户及其订单总额"
+    expected_tables: [orders, users]
+    expected_chart_type: table
+    gold_sql: |
+      SELECT u.name AS user_name, COUNT(o.id) AS order_count, SUM(o.total_amount) AS total_spent
+      FROM orders o
+      JOIN users u ON o.user_id = u.id
+      WHERE o.status = 'completed'
+      GROUP BY u.id, u.name
+      ORDER BY order_count DESC
+      LIMIT 10
+    result_tolerance:
+      numeric_tolerance: 0.01
+    analyst_keywords: ["用户", "购买", "Top"]
+
+  - id: BI-L2-005
+    level: L2
+    question: "各渠道用户的平均订单金额"
+    expected_tables: [orders, users]
+    expected_chart_type: bar
+    gold_sql: |
+      SELECT u.channel, ROUND(AVG(o.total_amount), 2) AS avg_order_amount
+      FROM orders o
+      JOIN users u ON o.user_id = u.id
+      WHERE o.status = 'completed'
+      GROUP BY u.channel
+      ORDER BY avg_order_amount DESC
+    result_tolerance:
+      numeric_tolerance: 0.02
+    analyst_keywords: ["渠道", "平均", "订单"]
+
+  - id: BI-L2-006
+    level: L2
+    question: "电子产品类目的销售额占总销售额的百分比是多少？"
+    expected_tables: [order_items, products, orders]
+    expected_chart_type: pie
+    gold_sql: |
+      SELECT
+        ROUND(
+          100.0 * SUM(oi.amount) FILTER (WHERE p.category = '电子产品')
+          / NULLIF(SUM(oi.amount), 0),
+          2
+        ) AS electronics_pct
+      FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.status = 'completed'
+    result_tolerance:
+      numeric_tolerance: 0.05
+    analyst_keywords: ["电子产品", "占比", "销售"]
+
+  - id: BI-L2-007
+    level: L2
+    question: "近 30 天每天的新增用户数和订单数"
+    expected_tables: [users, orders]
+    expected_chart_type: line
+    gold_sql: |
+      SELECT
+        d.day,
+        COUNT(DISTINCT u.id) AS new_users,
+        COUNT(DISTINCT o.id) AS order_count
+      FROM generate_series(CURRENT_DATE - 29, CURRENT_DATE, '1 day') AS d(day)
+      LEFT JOIN users u ON u.created_at::date = d.day
+      LEFT JOIN orders o ON o.created_at::date = d.day AND o.status = 'completed'
+      GROUP BY d.day
+      ORDER BY d.day
+    result_tolerance:
+      numeric_tolerance: 0
+    analyst_keywords: ["新增", "用户", "订单", "30"]
+
+  - id: BI-L2-008
+    level: L2
+    question: "客单价最高的 5 个商品类目是哪些？"
+    expected_tables: [order_items, products, orders]
+    expected_chart_type: bar
+    gold_sql: |
+      SELECT
+        p.category,
+        ROUND(SUM(oi.amount) / NULLIF(COUNT(DISTINCT o.id), 0), 2) AS avg_order_value
+      FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.status = 'completed'
+      GROUP BY p.category
+      ORDER BY avg_order_value DESC
+      LIMIT 5
+    result_tolerance:
+      numeric_tolerance: 0.02
+    analyst_keywords: ["客单价", "类目"]

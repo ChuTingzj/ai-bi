@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import Docker from 'dockerode';
 import type { DataSource } from '@ai-bi/db';
 import type { QueryResult, SandboxResult } from '@ai-bi/shared';
@@ -22,7 +22,7 @@ export class SandboxService {
   private readonly logger = new Logger(SandboxService.name);
   private readonly docker = new Docker();
 
-  constructor(private readonly crypto: CryptoService) {}
+  constructor(@Inject(CryptoService) private readonly crypto: CryptoService) {}
 
   async execute(sql: string, dataSource: DataSource): Promise<SandboxResult> {
     const validation = validateSql(sql);

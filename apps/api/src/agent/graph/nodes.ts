@@ -25,10 +25,10 @@ export interface NodeDeps {
 }
 
 export function createNodes(deps: NodeDeps) {
-  const { prisma, sandbox, llm } = deps;
+  const { sandbox, llm } = deps;
 
   async function plannerNode(state: BiAgentState) {
-    const dataSource = await prisma.dataSource.findUnique({
+    const dataSource = await deps.prisma.dataSource.findUnique({
       where: { id: state.data_source_id },
       select: { schemaDoc: true },
     });
@@ -55,7 +55,7 @@ export function createNodes(deps: NodeDeps) {
   }
 
   async function schemaFetcherNode(state: BiAgentState) {
-    const dataSource = await prisma.dataSource.findUnique({
+    const dataSource = await deps.prisma.dataSource.findUnique({
       where: { id: state.data_source_id },
       select: { schemaDoc: true },
     });
@@ -78,7 +78,7 @@ export function createNodes(deps: NodeDeps) {
   }
 
   async function sqlGeneratorNode(state: BiAgentState) {
-    const dataSource = await prisma.dataSource.findUnique({
+    const dataSource = await deps.prisma.dataSource.findUnique({
       where: { id: state.data_source_id },
       select: { type: true },
     });
@@ -104,7 +104,7 @@ export function createNodes(deps: NodeDeps) {
   }
 
   async function sqlExecutorNode(state: BiAgentState) {
-    const dataSource = await prisma.dataSource.findUnique({
+    const dataSource = await deps.prisma.dataSource.findUnique({
       where: { id: state.data_source_id },
     });
     if (!dataSource) {

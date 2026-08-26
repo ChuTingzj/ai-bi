@@ -9,12 +9,25 @@
     "lint": "turbo run lint",
     "db:generate": "pnpm --filter @ai-bi/db generate",
     "db:migrate": "pnpm --filter @ai-bi/db migrate:dev",
-    "db:deploy": "pnpm --filter @ai-bi/db migrate:deploy"
+    "db:deploy": "pnpm --filter @ai-bi/db migrate:deploy",
+    "benchmark:db:up": "docker compose up -d benchmark-db",
+    "benchmark:db:seed": "docker exec -i ai-bi-benchmark-db-1 psql -U postgres -d benchmark_bi < benchmark/seed/01-schema.sql && docker exec -i ai-bi-benchmark-db-1 psql -U postgres -d benchmark_bi < benchmark/seed/02-data.sql",
+    "benchmark:setup": "tsx benchmark/scripts/setup.ts",
+    "benchmark:run": "pnpm --filter @ai-bi/api benchmark:run"
   },
   "devDependencies": {
+    "@ai-bi/db": "workspace:*",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "bcryptjs": "^2.4.3",
+    "pg": "^8.13.0",
+    "tsx": "^4.19.0",
     "turbo": "^2.3.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "yaml": "^2.6.0"
   },
+
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20"

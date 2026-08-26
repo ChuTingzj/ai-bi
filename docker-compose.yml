@@ -48,6 +48,22 @@ services:
     depends_on:
       - api
 
+  benchmark-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: benchmark_bi
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - '5433:5432'
+    volumes:
+      - benchmark_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d benchmark_bi']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   sandbox:
     build:
       context: ./sandbox
@@ -57,3 +73,4 @@ services:
 
 volumes:
   pgdata:
+  benchmark_pgdata:

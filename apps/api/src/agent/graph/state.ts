@@ -37,3 +37,18 @@ export const BiAgentStateAnnotation = Annotation.Root({
 });
 
 export type BiAgentState = typeof BiAgentStateAnnotation.State;
+
+export interface BenchmarkRunResult {
+  intent: QueryIntent | null;
+  relevant_tables: string[];
+  generated_sql: string;
+  sql_result: QueryResult | null;
+  sql_error: string | null;
+  error_count: number;
+  chart_config: Record<string, unknown> | null;
+  analyst_text: string;
+  fallback: boolean;
+  sql_attempts: number;
+  latencies_ms: Record<string, number>;
+  total_latency_ms: number;
+}

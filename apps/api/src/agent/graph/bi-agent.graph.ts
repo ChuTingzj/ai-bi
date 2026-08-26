@@ -15,6 +15,9 @@ export function buildBiAgentGraph(
   deps: NodeDeps,
   checkpointer?: BaseCheckpointSaver,
 ) {
+  if (!deps.prisma) {
+    throw new Error('buildBiAgentGraph: deps.prisma is required');
+  }
   const nodes = createNodes(deps);
 
   const graph = new StateGraph(BiAgentStateAnnotation)

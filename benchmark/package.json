@@ -1,0 +1,12 @@
+{
+  "name": "@ai-bi/benchmark",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "benchmark:run": "tsx src/benchmark/cli.ts"
+  },
+  "dependencies": {
+    "@ai-bi/db": "workspace:*",
+    "@ai-bi/shared": "workspace:*"
+  }
+}
