@@ -38,16 +38,23 @@ pnpm benchmark:run -- --id BI-L1-001,BI-L2-003
 
 ## 门槛（MVP）
 
-| 指标 | 门槛 |
-|------|------|
-| E2E-TSR | ≥ 80% |
-| SQL@1 | ≥ 65% |
-| SQL@3 | ≥ 85% |
-| Intent Table Recall | ≥ 90% |
-| Chart Valid Rate | ≥ 85% |
-| Analyst Keyword Coverage | ≥ 75% |
-| P95 Latency | ≤ 45s |
-| Fallback Rate | ≤ 15% |
+| 指标 | 门槛 | 含义 |
+|------|------|------|
+| E2E-TSR | ≥ 80% | 全链路可用 |
+| Exec@1 | ≥ 85% | 首次 SQL 执行成功（不论是否对齐金标准） |
+| Exec Success | ≥ 90% | 最终执行成功 |
+| SQL Value Match | ≥ 65% | 忽略列名后的结果数值匹配（核心正确性） |
+| SQL@1 (strict) | ≥ 65% | 列名+数值严格等价（易受别名噪声影响） |
+| SQL@3 | ≥ 85% | 含重试后的执行/匹配成功 |
+| Intent Table Recall | ≥ 90% | 选表召回 |
+| Chart Valid Rate | ≥ 85% | ECharts JSON 可渲染 |
+| Chart Type Match | ≥ 80% | 图表类型与意图一致 |
+| Analyst Keyword Coverage | ≥ 75% | 洞察关键词覆盖 |
+| P95 Latency | ≤ 45s | 端到端延迟 |
+| Avg SQL Attempts | ≤ 1.5 | 平均生成/重试次数 |
+| Fallback Rate | ≤ 15% | 业务兜底比例 |
+
+补充观察项（不进门槛）：SQL Row Count Match、P50 Latency。
 
 ## 数据集
 

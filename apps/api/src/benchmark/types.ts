@@ -1,4 +1,4 @@
-import type { QueryIntent, QueryResult } from '@ai-bi/shared';
+import type { QueryResult } from '@ai-bi/shared';
 import type { BenchmarkRunResult } from '../agent/graph/state';
 
 export interface GoldCase {
@@ -21,9 +21,20 @@ export interface GoldDataset {
 export interface CaseScores {
   intent_table_recall: number;
   chart_type_match: boolean;
+  /** First attempt SQL executed successfully. */
+  exec_at_1: boolean;
+  /** Final SQL execution succeeded. */
+  exec_success: boolean;
+  /** Strict gold match (column names + values) on first try. */
   sql_at_1: boolean;
+  /** Exec success or strict match within 3 attempts. */
   sql_at_3: boolean;
+  /** Strict column-name + value match. */
   sql_result_match: boolean;
+  /** Value match ignoring column names. */
+  sql_value_match: boolean;
+  /** Row count equals gold. */
+  sql_row_count_match: boolean;
   chart_valid: boolean;
   analyst_keyword_coverage: number;
   e2e_success: boolean;
@@ -42,38 +53,62 @@ export interface CaseResult {
 
 export interface Thresholds {
   e2e_tsr: number;
+  exec_at_1: number;
+  exec_success: number;
   sql_at_1: number;
   sql_at_3: number;
+  sql_value_match: number;
   intent_table_recall: number;
   chart_valid_rate: number;
+  chart_type_match_rate: number;
   analyst_keyword_coverage: number;
   p95_latency_ms: number;
+  avg_sql_attempts: number;
   fallback_rate: number;
 }
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
   e2e_tsr: 0.8,
+  exec_at_1: 0.85,
+  exec_success: 0.9,
   sql_at_1: 0.65,
   sql_at_3: 0.85,
+  sql_value_match: 0.65,
   intent_table_recall: 0.9,
   chart_valid_rate: 0.85,
+  chart_type_match_rate: 0.8,
   analyst_keyword_coverage: 0.75,
   p95_latency_ms: 45_000,
+  avg_sql_attempts: 1.5,
   fallback_rate: 0.15,
 };
 
 export interface AggregateMetrics {
   total: number;
   e2e_tsr: number;
+  exec_at_1: number;
+  exec_success: number;
   sql_at_1: number;
   sql_at_3: number;
+  sql_value_match: number;
+  sql_row_count_match: number;
   intent_table_recall: number;
   chart_valid_rate: number;
+  chart_type_match_rate: number;
   analyst_keyword_coverage: number;
   fallback_rate: number;
+  avg_sql_attempts: number;
   p50_latency_ms: number;
   p95_latency_ms: number;
-  by_level: Record<string, { total: number; e2e_tsr: number }>;
+  by_level: Record<
+    string,
+    {
+      total: number;
+      e2e_tsr: number;
+      exec_at_1: number;
+      sql_value_match: number;
+    }
+  >;
   failure_modes: Record<string, number>;
 }
 
@@ -83,7 +118,10 @@ export interface BenchmarkSummary {
   run_at: string;
   thresholds: Thresholds;
   metrics: AggregateMetrics;
-  threshold_results: Record<string, { value: number; threshold: number; pass: boolean }>;
+  threshold_results: Record<
+    string,
+    { value: number; threshold: number; pass: boolean }
+  >;
   recommendation: string;
   cases: CaseResult[];
 }

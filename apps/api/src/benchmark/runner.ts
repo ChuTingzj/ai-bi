@@ -104,9 +104,13 @@ function scoreCase(
   const scores: CaseScores = {
     intent_table_recall: intentScore.table_recall,
     chart_type_match: intentScore.chart_type_match,
+    exec_at_1: sqlScore.exec_at_1,
+    exec_success: sqlScore.exec_success,
     sql_at_1: sqlScore.sql_at_1,
     sql_at_3: sqlScore.sql_at_3,
     sql_result_match: sqlScore.sql_result_match,
+    sql_value_match: sqlScore.sql_value_match,
+    sql_row_count_match: sqlScore.sql_row_count_match,
     chart_valid,
     analyst_keyword_coverage,
     e2e_success,
@@ -192,7 +196,7 @@ export async function runBenchmark(
 
       const status = caseResult.scores.e2e_success ? 'PASS' : 'FAIL';
       console.log(
-        `  → ${status} | SQL@1=${caseResult.scores.sql_at_1} SQL@3=${caseResult.scores.sql_at_3} | ${run.total_latency_ms}ms`,
+        `  → ${status} | exec@1=${caseResult.scores.exec_at_1} value=${caseResult.scores.sql_value_match} SQL@1=${caseResult.scores.sql_at_1} | ${run.total_latency_ms}ms`,
       );
     } catch (err) {
       console.error(`  → ERROR: ${(err as Error).message}`);
@@ -218,9 +222,13 @@ export async function runBenchmark(
         scores: {
           intent_table_recall: 0,
           chart_type_match: false,
+          exec_at_1: false,
+          exec_success: false,
           sql_at_1: false,
           sql_at_3: false,
           sql_result_match: false,
+          sql_value_match: false,
+          sql_row_count_match: false,
           chart_valid: false,
           analyst_keyword_coverage: 0,
           e2e_success: false,

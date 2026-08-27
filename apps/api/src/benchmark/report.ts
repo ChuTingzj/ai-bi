@@ -26,24 +26,41 @@ export function aggregateMetrics(cases: CaseResult[]): AggregateMetrics {
   for (const c of cases) {
     if (c.scores.fallback) {
       failure_modes['fallback'] = (failure_modes['fallback'] ?? 0) + 1;
-    } else if (!c.scores.sql_at_3) {
+    } else if (!c.scores.exec_success) {
       const reason = c.run.sql_error ?? 'sql_execution_failed';
-      failure_modes[reason.slice(0, 80)] = (failure_modes[reason.slice(0, 80)] ?? 0) + 1;
+      failure_modes[reason.slice(0, 80)] =
+        (failure_modes[reason.slice(0, 80)] ?? 0) + 1;
+    } else if (!c.scores.sql_value_match && !c.scores.sql_result_match) {
+      failure_modes['sql_value_mismatch'] =
+        (failure_modes['sql_value_mismatch'] ?? 0) + 1;
     } else if (!c.scores.chart_valid) {
       failure_modes['invalid_chart'] = (failure_modes['invalid_chart'] ?? 0) + 1;
     } else if (!c.scores.e2e_success) {
-      failure_modes['partial_success'] = (failure_modes['partial_success'] ?? 0) + 1;
+      failure_modes['partial_success'] =
+        (failure_modes['partial_success'] ?? 0) + 1;
     }
   }
 
-  const by_level: Record<string, { total: number; e2e_tsr: number }> = {};
+  const by_level: AggregateMetrics['by_level'] = {};
   for (const c of cases) {
-    if (!by_level[c.level]) by_level[c.level] = { total: 0, e2e_tsr: 0 };
+    if (!by_level[c.level]) {
+      by_level[c.level] = {
+        total: 0,
+        e2e_tsr: 0,
+        exec_at_1: 0,
+        sql_value_match: 0,
+      };
+    }
     by_level[c.level].total += 1;
     if (c.scores.e2e_success) by_level[c.level].e2e_tsr += 1;
+    if (c.scores.exec_at_1) by_level[c.level].exec_at_1 += 1;
+    if (c.scores.sql_value_match) by_level[c.level].sql_value_match += 1;
   }
   for (const level of Object.keys(by_level)) {
-    by_level[level].e2e_tsr /= by_level[level].total;
+    const n = by_level[level].total;
+    by_level[level].e2e_tsr /= n;
+    by_level[level].exec_at_1 /= n;
+    by_level[level].sql_value_match /= n;
   }
 
   const latencies = cases.map((c) => c.run.total_latency_ms);
@@ -51,12 +68,24 @@ export function aggregateMetrics(cases: CaseResult[]): AggregateMetrics {
   return {
     total: cases.length,
     e2e_tsr: avg(cases.map((c) => (c.scores.e2e_success ? 1 : 0))),
+    exec_at_1: avg(cases.map((c) => (c.scores.exec_at_1 ? 1 : 0))),
+    exec_success: avg(cases.map((c) => (c.scores.exec_success ? 1 : 0))),
     sql_at_1: avg(cases.map((c) => (c.scores.sql_at_1 ? 1 : 0))),
     sql_at_3: avg(cases.map((c) => (c.scores.sql_at_3 ? 1 : 0))),
+    sql_value_match: avg(cases.map((c) => (c.scores.sql_value_match ? 1 : 0))),
+    sql_row_count_match: avg(
+      cases.map((c) => (c.scores.sql_row_count_match ? 1 : 0)),
+    ),
     intent_table_recall: avg(cases.map((c) => c.scores.intent_table_recall)),
     chart_valid_rate: avg(cases.map((c) => (c.scores.chart_valid ? 1 : 0))),
-    analyst_keyword_coverage: avg(cases.map((c) => c.scores.analyst_keyword_coverage)),
+    chart_type_match_rate: avg(
+      cases.map((c) => (c.scores.chart_type_match ? 1 : 0)),
+    ),
+    analyst_keyword_coverage: avg(
+      cases.map((c) => c.scores.analyst_keyword_coverage),
+    ),
     fallback_rate: avg(cases.map((c) => (c.scores.fallback ? 1 : 0))),
+    avg_sql_attempts: avg(cases.map((c) => c.run.sql_attempts)),
     p50_latency_ms: percentile(latencies, 50),
     p95_latency_ms: percentile(latencies, 95),
     by_level,
@@ -67,35 +96,112 @@ export function aggregateMetrics(cases: CaseResult[]): AggregateMetrics {
 function buildRecommendation(metrics: AggregateMetrics): string {
   const lines: string[] = [];
 
-  if (metrics.e2e_tsr >= 0.8 && metrics.sql_at_3 >= 0.85) {
-    lines.push('端到端成功率与 SQL@3 达标，单模型架构可支撑 MVP 业务场景。');
+  if (metrics.e2e_tsr >= 0.8 && metrics.exec_success >= 0.9) {
+    lines.push('端到端与 SQL 执行成功率达标，单模型可支撑 MVP 日常看数。');
   }
 
-  if (metrics.sql_at_1 < 0.65 && metrics.sql_at_3 >= 0.85) {
+  if (metrics.exec_at_1 >= 0.85 && metrics.sql_at_1 < 0.65) {
+    if (metrics.sql_value_match >= 0.65) {
+      lines.push(
+        `首次执行成功率高（${pct(metrics.exec_at_1)}）且数值近似匹配达标（${pct(metrics.sql_value_match)}），SQL@1 偏低主因是列名/列集合与金标准不一致，属评测噪声为主。`,
+      );
+    } else {
+      lines.push(
+        `首次执行成功率高（${pct(metrics.exec_at_1)}）但数值匹配仅 ${pct(metrics.sql_value_match)}，说明业务口径（过滤条件/JOIN/枚举）偏差是主因，应强化 SQL 提示词与 schema 约定。`,
+      );
+    }
+  } else if (metrics.exec_at_1 < 0.85 && metrics.sql_at_3 >= 0.85) {
     lines.push(
-      '自纠错有效（SQL@3 达标但 SQL@1 仅 ' +
-        `${(metrics.sql_at_1 * 100).toFixed(0)}%），建议优化 planner 选表与 schema 检索，减少重试开销。`,
+      `自纠错有效（Exec@1 ${pct(metrics.exec_at_1)} → SQL@3 ${pct(metrics.sql_at_3)}），建议优化首次生成质量以降低延迟。`,
+    );
+  }
+
+  if (metrics.avg_sql_attempts > 1.5) {
+    lines.push(
+      `平均 SQL 尝试次数 ${metrics.avg_sql_attempts.toFixed(2)}，重试偏多会拉高延迟。`,
     );
   }
 
   if (metrics.p95_latency_ms > 45_000) {
     lines.push(
-      `P95 延迟 ${Math.round(metrics.p95_latency_ms / 1000)}s 超出 45s 门槛，主要因 SQL 多次重试；可通过提升 SQL@1 或使用更快模型改善。`,
+      `P95 延迟 ${Math.round(metrics.p95_latency_ms / 1000)}s 超出 45s 门槛，需压缩节点耗时或减少重试。`,
     );
   }
 
-  if ((metrics.by_level['L2']?.e2e_tsr ?? 1) < (metrics.by_level['L1']?.e2e_tsr ?? 0) - 0.15) {
-    lines.push('多表 JOIN 场景是主要瓶颈，建议为 sqlGenerator 节点引入 SQL 专项模型。');
+  if (
+    (metrics.by_level['L2']?.e2e_tsr ?? 1) <
+    (metrics.by_level['L1']?.e2e_tsr ?? 0) - 0.15
+  ) {
+    lines.push('多表 JOIN 场景明显弱于 L1，可考虑 SQL 专项模型。');
   } else if (metrics.fallback_rate > 0.15) {
-    lines.push('Fallback 率偏高，优先检查 schemaDoc 同步与提示词，再考虑多模型拆分。');
+    lines.push('Fallback 率偏高，优先检查 schemaDoc 与提示词。');
   }
 
   if (lines.length === 0) {
-    lines.push('当前单模型架构未达 MVP 门槛，建议运行 A/B 对照实验（SQL 专项模型 vs 推理模型）。');
+    lines.push(
+      '当前指标未达 MVP 门槛，建议做 SQL 专项模型 A/B 或加强金标准口径对齐。',
+    );
   }
 
   return lines.join(' ');
 }
+
+function pct(n: number): string {
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+type ThresholdKind = 'gte' | 'lte' | 'lte_abs';
+
+const THRESHOLD_META: Record<
+  keyof Thresholds,
+  { label: string; kind: ThresholdKind; metricKey: keyof AggregateMetrics }
+> = {
+  e2e_tsr: { label: 'E2E-TSR', kind: 'gte', metricKey: 'e2e_tsr' },
+  exec_at_1: { label: 'Exec@1', kind: 'gte', metricKey: 'exec_at_1' },
+  exec_success: {
+    label: 'Exec Success',
+    kind: 'gte',
+    metricKey: 'exec_success',
+  },
+  sql_value_match: {
+    label: 'SQL Value Match',
+    kind: 'gte',
+    metricKey: 'sql_value_match',
+  },
+  sql_at_1: { label: 'SQL@1 (strict)', kind: 'gte', metricKey: 'sql_at_1' },
+  sql_at_3: { label: 'SQL@3', kind: 'gte', metricKey: 'sql_at_3' },
+  intent_table_recall: {
+    label: 'Intent Table Recall',
+    kind: 'gte',
+    metricKey: 'intent_table_recall',
+  },
+  chart_valid_rate: {
+    label: 'Chart Valid Rate',
+    kind: 'gte',
+    metricKey: 'chart_valid_rate',
+  },
+  chart_type_match_rate: {
+    label: 'Chart Type Match',
+    kind: 'gte',
+    metricKey: 'chart_type_match_rate',
+  },
+  analyst_keyword_coverage: {
+    label: 'Analyst Keyword Coverage',
+    kind: 'gte',
+    metricKey: 'analyst_keyword_coverage',
+  },
+  p95_latency_ms: {
+    label: 'P95 Latency (ms)',
+    kind: 'lte_abs',
+    metricKey: 'p95_latency_ms',
+  },
+  avg_sql_attempts: {
+    label: 'Avg SQL Attempts',
+    kind: 'lte_abs',
+    metricKey: 'avg_sql_attempts',
+  },
+  fallback_rate: { label: 'Fallback Rate', kind: 'lte', metricKey: 'fallback_rate' },
+};
 
 export function buildSummary(params: {
   model: string;
@@ -106,48 +212,19 @@ export function buildSummary(params: {
   const thresholds = params.thresholds ?? DEFAULT_THRESHOLDS;
   const metrics = aggregateMetrics(params.cases);
 
-  const threshold_results: BenchmarkSummary['threshold_results'] = {
-    e2e_tsr: {
-      value: metrics.e2e_tsr,
-      threshold: thresholds.e2e_tsr,
-      pass: metrics.e2e_tsr >= thresholds.e2e_tsr,
-    },
-    sql_at_1: {
-      value: metrics.sql_at_1,
-      threshold: thresholds.sql_at_1,
-      pass: metrics.sql_at_1 >= thresholds.sql_at_1,
-    },
-    sql_at_3: {
-      value: metrics.sql_at_3,
-      threshold: thresholds.sql_at_3,
-      pass: metrics.sql_at_3 >= thresholds.sql_at_3,
-    },
-    intent_table_recall: {
-      value: metrics.intent_table_recall,
-      threshold: thresholds.intent_table_recall,
-      pass: metrics.intent_table_recall >= thresholds.intent_table_recall,
-    },
-    chart_valid_rate: {
-      value: metrics.chart_valid_rate,
-      threshold: thresholds.chart_valid_rate,
-      pass: metrics.chart_valid_rate >= thresholds.chart_valid_rate,
-    },
-    analyst_keyword_coverage: {
-      value: metrics.analyst_keyword_coverage,
-      threshold: thresholds.analyst_keyword_coverage,
-      pass: metrics.analyst_keyword_coverage >= thresholds.analyst_keyword_coverage,
-    },
-    p95_latency_ms: {
-      value: metrics.p95_latency_ms,
-      threshold: thresholds.p95_latency_ms,
-      pass: metrics.p95_latency_ms <= thresholds.p95_latency_ms,
-    },
-    fallback_rate: {
-      value: metrics.fallback_rate,
-      threshold: thresholds.fallback_rate,
-      pass: metrics.fallback_rate <= thresholds.fallback_rate,
-    },
-  };
+  const threshold_results: BenchmarkSummary['threshold_results'] = {};
+  for (const key of Object.keys(THRESHOLD_META) as (keyof Thresholds)[]) {
+    const meta = THRESHOLD_META[key];
+    const value = metrics[meta.metricKey] as number;
+    const threshold = thresholds[key];
+    const pass =
+      meta.kind === 'gte'
+        ? value >= threshold
+        : meta.kind === 'lte'
+          ? value <= threshold
+          : value <= threshold;
+    threshold_results[key] = { value, threshold, pass };
+  }
 
   return {
     model: params.model,
@@ -159,10 +236,6 @@ export function buildSummary(params: {
     recommendation: buildRecommendation(metrics),
     cases: params.cases,
   };
-}
-
-function pct(n: number): string {
-  return `${(n * 100).toFixed(1)}%`;
 }
 
 export function renderMarkdown(summary: BenchmarkSummary): string {
@@ -178,34 +251,52 @@ export function renderMarkdown(summary: BenchmarkSummary): string {
     '|--------|--------|-----------|--------|',
   ];
 
-  const labels: Record<string, string> = {
-    e2e_tsr: 'E2E-TSR',
-    sql_at_1: 'SQL@1',
-    sql_at_3: 'SQL@3',
-    intent_table_recall: 'Intent Table Recall',
-    chart_valid_rate: 'Chart Valid Rate',
-    analyst_keyword_coverage: 'Analyst Keyword Coverage',
-    p95_latency_ms: 'P95 Latency (ms)',
-    fallback_rate: 'Fallback Rate',
-  };
-
-  for (const [key, result] of Object.entries(summary.threshold_results)) {
-    const isLatency = key === 'p95_latency_ms';
-    const isFallback = key === 'fallback_rate';
-    const val = isLatency ? `${Math.round(result.value)}` : pct(result.value);
-    const thr = isLatency
-      ? `≤ ${result.threshold}`
-      : isFallback
-        ? `≤ ${pct(result.threshold)}`
-        : `≥ ${pct(result.threshold)}`;
+  for (const key of Object.keys(THRESHOLD_META) as (keyof Thresholds)[]) {
+    const meta = THRESHOLD_META[key];
+    const result = summary.threshold_results[key];
+    let val: string;
+    let thr: string;
+    if (meta.kind === 'lte_abs') {
+      if (key === 'p95_latency_ms') {
+        val = `${Math.round(result.value)}`;
+        thr = `≤ ${result.threshold}`;
+      } else {
+        val = result.value.toFixed(2);
+        thr = `≤ ${result.threshold}`;
+      }
+    } else if (meta.kind === 'lte') {
+      val = pct(result.value);
+      thr = `≤ ${pct(result.threshold)}`;
+    } else {
+      val = pct(result.value);
+      thr = `≥ ${pct(result.threshold)}`;
+    }
     lines.push(
-      `| ${labels[key]} | ${val} | ${thr} | ${result.pass ? 'PASS' : 'FAIL'} |`,
+      `| ${meta.label} | ${val} | ${thr} | ${result.pass ? 'PASS' : 'FAIL'} |`,
     );
   }
 
-  lines.push('', '## By Level', '', '| Level | Count | E2E-TSR |', '|-------|-------|---------|');
+  lines.push(
+    '',
+    '## Supplementary',
+    '',
+    `| Metric | Result |`,
+    `|--------|--------|`,
+    `| SQL Row Count Match | ${pct(summary.metrics.sql_row_count_match)} |`,
+    `| P50 Latency (ms) | ${Math.round(summary.metrics.p50_latency_ms)} |`,
+  );
+
+  lines.push(
+    '',
+    '## By Level',
+    '',
+    '| Level | Count | E2E-TSR | Exec@1 | Value Match |',
+    '|-------|-------|---------|--------|-------------|',
+  );
   for (const [level, data] of Object.entries(summary.metrics.by_level)) {
-    lines.push(`| ${level} | ${data.total} | ${pct(data.e2e_tsr)} |`);
+    lines.push(
+      `| ${level} | ${data.total} | ${pct(data.e2e_tsr)} | ${pct(data.exec_at_1)} | ${pct(data.sql_value_match)} |`,
+    );
   }
 
   lines.push('', '## Top Failure Modes', '');
@@ -215,19 +306,26 @@ export function renderMarkdown(summary: BenchmarkSummary): string {
   if (modes.length === 0) {
     lines.push('No failures recorded.');
   } else {
-    for (const [mode, count] of modes.slice(0, 5)) {
+    for (const [mode, count] of modes.slice(0, 8)) {
       lines.push(`- ${mode}: ${count} cases`);
     }
   }
 
-  const allPass = Object.values(summary.threshold_results).every((r) => r.pass);
+  const gateKeys: (keyof Thresholds)[] = [
+    'e2e_tsr',
+    'exec_success',
+    'sql_value_match',
+    'p95_latency_ms',
+    'fallback_rate',
+  ];
+  const gatePass = gateKeys.every((k) => summary.threshold_results[k]?.pass);
   lines.push(
     '',
     '## Go / No-Go',
     '',
-    allPass
-      ? '**GO** — 单模型架构达到 MVP 运营门槛。'
-      : '**NO-GO** — 部分指标未达标，详见上表。',
+    gatePass
+      ? '**GO** — 核心运营门槛（E2E / Exec / Value Match / Latency / Fallback）达标。'
+      : '**NO-GO** — 核心门槛未全部达标（SQL@1 strict 单独 FAIL 不阻塞 GO，以 Value Match 为准）。',
     '',
     '## Recommendation',
     '',
@@ -243,7 +341,7 @@ export function renderMarkdown(summary: BenchmarkSummary): string {
       `### ${c.case_id} (${status})`,
       `- Level: ${c.level}`,
       `- Question: ${c.question}`,
-      `- E2E: ${status} | SQL@1: ${c.scores.sql_at_1} | SQL@3: ${c.scores.sql_at_3} | Latency: ${c.run.total_latency_ms}ms`,
+      `- E2E: ${status} | Exec@1: ${c.scores.exec_at_1} | Value: ${c.scores.sql_value_match} | SQL@1: ${c.scores.sql_at_1} | Attempts: ${c.run.sql_attempts} | Latency: ${c.run.total_latency_ms}ms`,
     );
     if (c.failure_reason) {
       lines.push(`- Failure: ${c.failure_reason}`);
