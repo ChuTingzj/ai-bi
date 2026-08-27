@@ -8,10 +8,16 @@ import {
   type AgentStep,
   type SessionDto,
 } from '@ai-bi/shared';
-import { useMessages } from '@/hooks/useSessions';
+import {
+  useAutoBindSessionDataSource,
+  useMessages,
+  useSessions,
+  useUpdateSession,
+} from '@/hooks/useSessions';
 import { useDataSources } from '@/hooks/useDataSources';
 import { streamChat } from '@/lib/sse-client';
 import { api } from '@/lib/api';
+import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { StreamingIndicator } from './StreamingIndicator';
@@ -74,10 +80,17 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const queryClient = useQueryClient();
   const { data: messagesData } = useMessages(sessionId);
+  const { data: sessions } = useSessions();
   const { data: dataSources } = useDataSources();
+  const updateSession = useUpdateSession();
+  useAutoBindSessionDataSource(sessionId);
   const abortRef = useRef<AbortController | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+
+  const current = sessions?.find((s) => s.id === sessionId);
+  const boundDataSourceId = current?.dataSourceId ?? '';
+  const hasSources = (dataSources?.length ?? 0) > 0;
 
   useEffect(() => {
     return () => {
@@ -105,7 +118,10 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
     return () => observer.disconnect();
   }, [sessionId]);
 
-  const defaultDataSourceId = dataSources?.[0]?.id;
+  function handleDataSourceChange(id: string) {
+    if (!id) return;
+    updateSession.mutate({ id: sessionId, dataSourceId: id });
+  }
 
   function patchSessionTitle(title: string) {
     queryClient.setQueryData<SessionDto[]>(['sessions'], (prev) => {
@@ -122,14 +138,12 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
   }
 
   async function handleSend(message: string) {
-    if (state.isStreaming) return;
+    if (state.isStreaming || !boundDataSourceId) return;
 
     stickToBottomRef.current = true;
     dispatch({ type: 'START', question: message });
     abortRef.current = new AbortController();
 
-    const sessions = queryClient.getQueryData<SessionDto[]>(['sessions']);
-    const current = sessions?.find((s) => s.id === sessionId);
     const hasUserMessage = messagesData?.items?.some((m) => m.role === 'USER');
     if (current?.title === DEFAULT_SESSION_TITLE && !hasUserMessage) {
       patchSessionTitle(heuristicTitle(message));
@@ -139,7 +153,7 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
       for await (const event of streamChat(
         sessionId,
         message,
-        defaultDataSourceId,
+        boundDataSourceId,
         abortRef.current.signal,
       )) {
         switch (event.type) {
@@ -192,8 +206,26 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
     alert('已加入 Dashboard');
   }
 
+  const emptyHint = !hasSources
+    ? '请先在「数据源管理」中接入数据源，再开始提问。'
+    : !boundDataSourceId
+      ? '请先在顶部选择数据源，之后的问题将查询该库。'
+      : '用自然语言提问，AI 将自动生成 SQL、执行查询并绘制图表。结果可在 SQL Lab 中修改后重跑。';
+
+  const placeholder = !hasSources
+    ? '请先在「数据源管理」中接入数据源'
+    : !boundDataSourceId
+      ? '请先选择数据源后再提问'
+      : '输入问题，例如：对比过去三个月华东区和华南区的销售额趋势';
+
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <ChatHeader
+        dataSources={dataSources}
+        dataSourceId={boundDataSourceId}
+        disabled={state.isStreaming}
+        onChange={handleDataSourceChange}
+      />
       <div
         ref={scrollerRef}
         onScroll={handleScrollerScroll}
@@ -203,6 +235,7 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
           <MessageList
             messages={messagesData?.items ?? []}
             sessionId={sessionId}
+            emptyHint={emptyHint}
             streaming={
               state.isStreaming || state.error
                 ? {
@@ -223,12 +256,8 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
       </div>
 
       <ChatInput
-        disabled={state.isStreaming || !defaultDataSourceId}
-        placeholder={
-          !defaultDataSourceId
-            ? '请先在「数据源管理」中接入数据源'
-            : '输入问题，例如：对比过去三个月华东区和华南区的销售额趋势'
-        }
+        disabled={state.isStreaming || !boundDataSourceId}
+        placeholder={placeholder}
         onSend={handleSend}
       />
     </div>

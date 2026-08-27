@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -12,7 +13,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, UserPayload } from '../common/current-user.decorator';
 import { SessionService } from './session.service';
-import { CreateSessionDto } from './session.dto';
+import { CreateSessionDto, UpdateSessionDto } from './session.dto';
 
 @Controller('api/sessions')
 @UseGuards(JwtAuthGuard)
@@ -30,6 +31,15 @@ export class SessionController {
     @Body() dto: CreateSessionDto,
   ) {
     return { code: 0, data: await this.sessionService.create(user.id, dto) };
+  }
+
+  @Patch(':id')
+  async update(
+    @CurrentUser() user: UserPayload,
+    @Param('id') id: string,
+    @Body() dto: UpdateSessionDto,
+  ) {
+    return { code: 0, data: await this.sessionService.update(id, user.id, dto) };
   }
 
   @Get(':id/messages')

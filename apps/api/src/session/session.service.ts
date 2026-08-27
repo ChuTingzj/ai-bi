@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { DEFAULT_SESSION_TITLE, type QueryIntent } from '@ai-bi/shared';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSessionDto } from './session.dto';
+import { CreateSessionDto, UpdateSessionDto } from './session.dto';
 
 @Injectable()
 export class SessionService {
@@ -17,14 +17,7 @@ export class SessionService {
       orderBy: { createdAt: 'desc' },
       include: { dataSource: { select: { name: true } } },
     });
-    return sessions.map((s) => ({
-      id: s.id,
-      title: s.title,
-      dataSourceId: s.dataSourceId,
-      dataSourceName: s.dataSource?.name,
-      createdAt: s.createdAt.toISOString(),
-      updatedAt: s.updatedAt.toISOString(),
-    }));
+    return sessions.map((s) => this.toDto(s));
   }
 
   async create(userId: string, dto: CreateSessionDto) {
@@ -41,6 +34,22 @@ export class SessionService {
       dataSourceId: session.dataSourceId,
       createdAt: session.createdAt.toISOString(),
     };
+  }
+
+  async update(sessionId: string, userId: string, dto: UpdateSessionDto) {
+    await this.assertOwner(sessionId, userId);
+    const dataSource = await this.prisma.dataSource.findFirst({
+      where: { id: dto.dataSourceId, userId },
+      select: { id: true },
+    });
+    if (!dataSource) throw new NotFoundException('数据源不存在');
+
+    const session = await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { dataSourceId: dto.dataSourceId },
+      include: { dataSource: { select: { name: true } } },
+    });
+    return this.toDto(session);
   }
 
   async assertOwner(sessionId: string, userId: string) {
@@ -84,5 +93,23 @@ export class SessionService {
     await this.assertOwner(sessionId, userId);
     await this.prisma.session.delete({ where: { id: sessionId } });
     return { deleted: true };
+  }
+
+  private toDto(session: {
+    id: string;
+    title: string;
+    dataSourceId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    dataSource?: { name: string } | null;
+  }) {
+    return {
+      id: session.id,
+      title: session.title,
+      dataSourceId: session.dataSourceId,
+      dataSourceName: session.dataSource?.name,
+      createdAt: session.createdAt.toISOString(),
+      updatedAt: session.updatedAt.toISOString(),
+    };
   }
 }

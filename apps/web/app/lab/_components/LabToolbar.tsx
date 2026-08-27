@@ -2,6 +2,7 @@
 
 import { Play } from '@phosphor-icons/react';
 import type { DataSourceDto, SessionDto } from '@ai-bi/shared';
+import { DataSourceSelect } from '@/components/datasource/DataSourceSelect';
 
 export function LabToolbar({
   sessions,
@@ -45,22 +46,13 @@ export function LabToolbar({
         </select>
       </label>
 
-      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        数据源
-        <select
-          className="min-h-11 cursor-pointer rounded-lg border border-border bg-card px-2 py-1 text-sm text-foreground"
-          value={dataSourceId}
-          onChange={(e) => onDataSourceChange(e.target.value)}
-          disabled={running}
-        >
-          <option value="">请选择数据源</option>
-          {dataSources?.map((ds) => (
-            <option key={ds.id} value={ds.id}>
-              {ds.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <DataSourceSelect
+        id="lab-data-source-select"
+        dataSources={dataSources}
+        value={dataSourceId}
+        onChange={onDataSourceChange}
+        disabled={running}
+      />
 
       {sourceLabel && (
         <span className="truncate text-xs text-muted-foreground">{sourceLabel}</span>

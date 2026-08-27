@@ -58,7 +58,7 @@ export class ChatService {
           dto.sessionId,
           user.id,
         );
-        const dataSourceId = dto.dataSourceId ?? session.dataSourceId;
+        const dataSourceId = session.dataSourceId ?? dto.dataSourceId;
         if (!dataSourceId) {
           throw new BadRequestException('会话未绑定数据源，请指定 dataSourceId');
         }

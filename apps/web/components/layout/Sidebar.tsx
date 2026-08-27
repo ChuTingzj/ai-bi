@@ -75,8 +75,18 @@ export function Sidebar() {
                 : 'text-foreground hover:bg-muted'
             }`}
           >
-            <span className="truncate" title={s.title}>
-              {s.title}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate" title={s.title}>
+                {s.title}
+              </span>
+              {s.dataSourceName ? (
+                <span
+                  className="block truncate text-xs text-muted-foreground"
+                  title={s.dataSourceName}
+                >
+                  {s.dataSourceName}
+                </span>
+              ) : null}
             </span>
             <button
               onClick={(e) => handleDelete(e, s.id)}

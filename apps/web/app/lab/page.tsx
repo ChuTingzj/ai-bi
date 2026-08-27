@@ -9,7 +9,7 @@ import type { AgentStep, QueryResult } from '@ai-bi/shared';
 import { AppShell } from '@/components/layout/AppShell';
 import { EChartsRenderer } from '@/components/charts/EChartsRenderer';
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer';
-import { useMessages, useSessions } from '@/hooks/useSessions';
+import { useMessages, useSessions, useUpdateSession, useAutoBindSessionDataSource } from '@/hooks/useSessions';
 import { useDataSourceDetail, useDataSources } from '@/hooks/useDataSources';
 import { streamLabRun } from '@/lib/sse-client';
 import { LabToolbar } from './_components/LabToolbar';
@@ -57,6 +57,8 @@ function LabWorkbench() {
   const { data: dataSources } = useDataSources();
   const { data: messagesData } = useMessages(sessionId);
   const { data: dataSourceDetail } = useDataSourceDetail(dataSourceId || undefined);
+  const updateSession = useUpdateSession();
+  useAutoBindSessionDataSource(sessionId || undefined);
 
   useEffect(() => {
     setSessionId(initialSessionId);
@@ -69,10 +71,9 @@ function LabWorkbench() {
       setDataSourceId(sessionDs);
       return;
     }
-    if (dataSources?.[0]?.id) {
-      setDataSourceId((current) => current || dataSources[0].id);
-    }
-  }, [sessionId, sessions, dataSources]);
+    if (!sessionId) return;
+    setDataSourceId('');
+  }, [sessionId, sessions]);
 
   useEffect(() => {
     if (!messageId || !messagesData?.items) return;
@@ -206,8 +207,15 @@ function LabWorkbench() {
     setChart(null);
     setInsight('');
     const ds = sessions?.find((s) => s.id === id)?.dataSourceId;
-    if (ds) setDataSourceId(ds);
+    setDataSourceId(ds ?? '');
     router.replace(id ? `/lab?sessionId=${id}` : '/lab');
+  }
+
+  function handleDataSourceChange(id: string) {
+    setDataSourceId(id);
+    if (sessionId && id) {
+      updateSession.mutate({ id: sessionId, dataSourceId: id });
+    }
   }
 
   const tabs: { id: ResultTab; label: string; icon: typeof Table }[] = [
@@ -227,7 +235,7 @@ function LabWorkbench() {
         running={running}
         sourceLabel={sourceLabel}
         onSessionChange={handleSessionChange}
-        onDataSourceChange={setDataSourceId}
+        onDataSourceChange={handleDataSourceChange}
         onRun={run}
       />
 

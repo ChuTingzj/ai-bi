@@ -9,3 +9,8 @@ export class CreateSessionDto {
   @IsUUID()
   dataSourceId?: string;
 }
+
+export class UpdateSessionDto {
+  @IsUUID()
+  dataSourceId: string;
+}
