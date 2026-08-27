@@ -25,6 +25,7 @@ export interface RunnerOptions {
   outputDir: string;
   model?: string;
   levelFilter?: string;
+  caseIds?: string[];
   limit?: number;
   dbHost?: string;
   dbPort?: number;
@@ -142,11 +143,24 @@ export async function runBenchmark(
   const dataset = parseYaml(datasetContent) as GoldDataset;
 
   let cases = dataset.cases;
+  if (options.caseIds?.length) {
+    const byId = new Map(cases.map((c) => [c.id, c]));
+    const unknown = options.caseIds.filter((id) => !byId.has(id));
+    if (unknown.length) {
+      throw new Error(
+        `Unknown case id(s): ${unknown.join(', ')}. Available: ${cases.map((c) => c.id).join(', ')}`,
+      );
+    }
+    cases = options.caseIds.map((id) => byId.get(id)!);
+  }
   if (options.levelFilter) {
     cases = cases.filter((c) => c.level === options.levelFilter);
   }
   if (options.limit && options.limit > 0) {
     cases = cases.slice(0, options.limit);
+  }
+  if (cases.length === 0) {
+    throw new Error('No cases matched the given filters.');
   }
 
   const dbHost = options.dbHost ?? 'localhost';

@@ -22,6 +22,10 @@ pnpm benchmark:run
 
 # 冒烟子集
 pnpm benchmark:run -- --filter L1 --limit 5
+
+# 按 case id 运行
+pnpm benchmark:run -- --id BI-L1-001
+pnpm benchmark:run -- --id BI-L1-001,BI-L2-003
 ```
 
 ## 输出

@@ -26,19 +26,51 @@ function loadEnvFile(filePath: string) {
 
 function parseArgs(argv: string[]) {
   const args: Record<string, string> = {};
+  const caseIds: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i].startsWith('--')) {
       const key = argv[i].slice(2);
       const next = argv[i + 1];
       if (next && !next.startsWith('--')) {
-        args[key] = next;
+        if (key === 'id' || key === 'case') {
+          caseIds.push(
+            ...next
+              .split(',')
+              .map((id) => id.trim())
+              .filter(Boolean),
+          );
+        } else {
+          args[key] = next;
+        }
         i++;
       } else {
         args[key] = 'true';
       }
     }
   }
-  return args;
+  return { args, caseIds };
+}
+
+function printUsage() {
+  console.log(`Usage: benchmark:run [options]
+
+Options:
+  --id, --case <ids>   Run only these case ids (comma-separated or repeatable)
+  --filter <level>     Run only cases at this level (e.g. L1, L2)
+  --limit <n>          Cap the number of cases
+  --dataset <path>     Dataset yaml path
+  --output <path>      Report output directory
+  --model <name>       Override LLM_MODEL
+  --datasource-id <id> Override BENCHMARK_DATASOURCE_ID
+  --user-id <id>       Override BENCHMARK_USER_ID
+  --session-id <id>    Override BENCHMARK_SESSION_ID
+
+Examples:
+  pnpm benchmark:run -- --id BI-L1-001
+  pnpm benchmark:run -- --id BI-L1-001,BI-L1-002
+  pnpm benchmark:run -- --id BI-L1-001 --id BI-L2-003
+  pnpm benchmark:run -- --filter L1 --limit 5
+`);
 }
 
 async function main() {
@@ -46,7 +78,12 @@ async function main() {
   loadEnvFile(resolve(root, '.env'));
   loadEnvFile(resolve(root, 'benchmark/.env.benchmark'));
 
-  const args = parseArgs(process.argv.slice(2));
+  const { args, caseIds } = parseArgs(process.argv.slice(2));
+
+  if (args.help || args.h) {
+    printUsage();
+    process.exit(0);
+  }
 
   const dataSourceId =
     args['datasource-id'] ?? process.env.BENCHMARK_DATASOURCE_ID;
@@ -80,6 +117,7 @@ async function main() {
     outputDir: args.output ?? resolve(root, 'benchmark/reports'),
     model: process.env.LLM_MODEL,
     levelFilter: args.filter,
+    caseIds: caseIds.length ? caseIds : undefined,
     limit: args.limit ? parseInt(args.limit, 10) : undefined,
     dbHost: process.env.BENCHMARK_DB_HOST ?? 'localhost',
     dbPort: parseInt(process.env.BENCHMARK_DB_PORT ?? '5433', 10),
