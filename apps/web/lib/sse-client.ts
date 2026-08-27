@@ -1,24 +1,9 @@
-import type { SseEvent } from '@ai-bi/shared';
+import type { LabRunRequest, SseEvent } from '@ai-bi/shared';
 import { getAccessToken } from './auth';
 
-export async function* streamChat(
-  sessionId: string,
-  message: string,
-  dataSourceId?: string,
-  signal?: AbortSignal,
-): AsyncGenerator<SseEvent> {
-  const response = await fetch('/sse/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${getAccessToken()}`,
-    },
-    body: JSON.stringify({ sessionId, message, dataSourceId }),
-    signal,
-  });
-
+async function* readSse(response: Response): AsyncGenerator<SseEvent> {
   if (!response.ok || !response.body) {
-    throw new Error(`对话请求失败: ${response.status}`);
+    throw new Error(`请求失败: ${response.status}`);
   }
 
   const reader = response.body.getReader();
@@ -48,4 +33,40 @@ export async function* streamChat(
   } finally {
     reader.releaseLock();
   }
+}
+
+export async function* streamChat(
+  sessionId: string,
+  message: string,
+  dataSourceId?: string,
+  signal?: AbortSignal,
+): AsyncGenerator<SseEvent> {
+  const response = await fetch('/sse/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+    body: JSON.stringify({ sessionId, message, dataSourceId }),
+    signal,
+  });
+
+  yield* readSse(response);
+}
+
+export async function* streamLabRun(
+  body: LabRunRequest,
+  signal?: AbortSignal,
+): AsyncGenerator<SseEvent> {
+  const response = await fetch('/sse/lab', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  yield* readSse(response);
 }

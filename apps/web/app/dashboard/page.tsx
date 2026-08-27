@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DashboardChartDto } from '@ai-bi/shared';
 import { api } from '@/lib/api';
-import { Sidebar } from '@/components/layout/Sidebar';
+import { AppShell } from '@/components/layout/AppShell';
 import { ChartCard } from './_components/ChartCard';
 
 export default function DashboardPage() {
@@ -20,18 +20,17 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="flex h-screen">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">
-        <h1 className="mb-1 text-2xl font-bold">我的 Dashboard</h1>
-        <p className="mb-6 text-sm text-slate-500">
+    <AppShell>
+      <div className="flex-1 overflow-y-auto p-6">
+        <h1 className="mb-1 text-2xl font-bold text-foreground">我的 Dashboard</h1>
+        <p className="mb-6 text-sm text-muted-foreground">
           从对话中收藏的图表会展示在这里
         </p>
 
-        {isLoading && <p className="text-slate-400">加载中...</p>}
+        {isLoading && <p className="text-muted-foreground">加载中...</p>}
 
         {!isLoading && (!charts || charts.length === 0) && (
-          <div className="mt-24 text-center text-slate-400">
+          <div className="mt-24 text-center text-muted-foreground">
             <p>还没有收藏图表</p>
             <p className="mt-1 text-sm">
               在对话中将鼠标悬停在图表上，点击「加入 Dashboard」
@@ -48,7 +47,7 @@ export default function DashboardPage() {
             />
           ))}
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

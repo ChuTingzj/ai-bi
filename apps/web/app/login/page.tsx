@@ -37,15 +37,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="mb-1 text-2xl font-bold">DataMind AI-BI</h1>
-        <p className="mb-6 text-sm text-slate-500">对话即图表 · 多智能体数据洞察</p>
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8">
+        <h1 className="mb-1 text-2xl font-bold text-foreground">DataMind AI-BI</h1>
+        <p className="mb-6 text-sm text-muted-foreground">对话即图表 · 多智能体数据洞察</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'register' && (
             <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
+              className="w-full rounded-lg border border-border px-3 py-2 focus:border-primary focus:outline-none"
               placeholder="姓名"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -53,7 +53,7 @@ export default function LoginPage() {
             />
           )}
           <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-lg border border-border px-3 py-2 focus:border-primary focus:outline-none"
             type="email"
             placeholder="邮箱"
             value={email}
@@ -61,7 +61,7 @@ export default function LoginPage() {
             required
           />
           <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-lg border border-border px-3 py-2 focus:border-primary focus:outline-none"
             type="password"
             placeholder="密码（至少 8 位）"
             value={password}
@@ -70,19 +70,23 @@ export default function LoginPage() {
             required
           />
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-blue-600 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="min-h-11 w-full cursor-pointer rounded-lg bg-primary py-2 font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
           >
             {loading ? '请稍候...' : mode === 'login' ? '登录' : '注册并登录'}
           </button>
         </form>
 
         <button
-          className="mt-4 w-full text-sm text-blue-600 hover:underline"
+          className="mt-4 w-full cursor-pointer text-sm text-primary hover:underline"
           onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
         >
           {mode === 'login' ? '没有账号？注册' : '已有账号？登录'}

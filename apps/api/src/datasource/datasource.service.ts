@@ -95,6 +95,14 @@ export class DataSourceService {
     return this.toDto(ds);
   }
 
+  async findOne(userId: string, id: string) {
+    const ds = await this.assertOwner(id, userId);
+    return {
+      ...this.toDto(ds),
+      schemaDoc: ds.schemaDoc,
+    };
+  }
+
   async remove(userId: string, id: string) {
     await this.assertOwner(id, userId);
     await this.prisma.dataSource.delete({ where: { id } });

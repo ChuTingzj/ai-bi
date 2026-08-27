@@ -34,6 +34,7 @@ export const BiAgentStateAnnotation = Annotation.Root({
     default: () => '',
   }),
   session_id: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
+  analyst_text: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
 });
 
 export type BiAgentState = typeof BiAgentStateAnnotation.State;

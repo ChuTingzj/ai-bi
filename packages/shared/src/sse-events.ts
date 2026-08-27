@@ -1,3 +1,5 @@
+import type { QueryIntent, QueryResult } from './agent-types';
+
 export type AgentStep =
   | 'planning'
   | 'fetching_schema'
@@ -13,6 +15,9 @@ export type SseEvent =
   | { type: 'token'; content: string }
   | { type: 'chart'; config: Record<string, unknown> }
   | { type: 'sql'; query: string; status: SqlStatus }
+  | { type: 'result'; data: QueryResult }
+  | { type: 'intent'; intent: QueryIntent }
   | { type: 'status'; step: AgentStep; message: string }
   | { type: 'error'; code: string; message: string }
+  | { type: 'title'; title: string }
   | { type: 'done'; messageId: string };

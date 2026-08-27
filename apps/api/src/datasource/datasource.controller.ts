@@ -23,6 +23,11 @@ export class DataSourceController {
     return { code: 0, data: await this.dataSourceService.list(user.id) };
   }
 
+  @Get(':id')
+  async findOne(@CurrentUser() user: UserPayload, @Param('id') id: string) {
+    return { code: 0, data: await this.dataSourceService.findOne(user.id, id) };
+  }
+
   @Post()
   async create(
     @CurrentUser() user: UserPayload,

@@ -1,12 +1,14 @@
 import { randomUUID } from 'crypto';
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
-import type { SseEvent } from '@ai-bi/shared';
+import type { QueryIntent, QueryResult, SseEvent } from '@ai-bi/shared';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { PrismaService } from '../prisma/prisma.service';
 import { SandboxService } from '../sandbox/sandbox.service';
 import { LlmService } from './llm.service';
 import { buildBiAgentGraph } from './graph/bi-agent.graph';
-import { FALLBACK_MESSAGE } from './graph/prompts';
+import { ANALYST_SYSTEM_PROMPT, FALLBACK_MESSAGE } from './graph/prompts';
+import { createNodes } from './graph/nodes';
 import type { BiAgentState, BenchmarkRunResult } from './graph/state';
 
 export interface WorkflowInput {
@@ -16,6 +18,27 @@ export interface WorkflowInput {
   userId: string;
   signal?: AbortSignal;
 }
+
+export interface LabRerunInput {
+  sql: string;
+  dataSourceId: string;
+  sessionId: string;
+  question: string;
+  intent: QueryIntent | null;
+  signal?: AbortSignal;
+}
+
+export interface LabRerunResult {
+  sqlResult: QueryResult | null;
+  sqlError: string | null;
+  truncated: boolean;
+  chartConfig: Record<string, unknown> | null;
+  chartError: string | null;
+  analystText: string;
+  analystError: string | null;
+}
+
+const RESULT_ROW_LIMIT = 1000;
 
 function chunkText(chunk: unknown): string {
   if (!chunk || typeof chunk !== 'object') return '';
@@ -132,6 +155,10 @@ export class AgentService implements OnModuleInit {
       // 节点结束：推送结果事件
       if (event.event === 'on_chain_end' && NODE_NAMES.has(event.name)) {
         const output = (event.data?.output ?? {}) as Partial<BiAgentState>;
+
+        if (event.name === 'planner' && output.intent) {
+          yield { type: 'intent', intent: output.intent };
+        }
 
         if (event.name === 'sqlGenerator' && output.generated_sql) {
           lastSql = output.generated_sql;
@@ -262,6 +289,130 @@ export class AgentService implements OnModuleInit {
       sql_attempts,
       latencies_ms: latencies,
       total_latency_ms: Date.now() - startedAt,
+    };
+  }
+
+  async *rerunFromSql(input: LabRerunInput): AsyncGenerator<SseEvent, LabRerunResult> {
+    const empty: LabRerunResult = {
+      sqlResult: null,
+      sqlError: null,
+      truncated: false,
+      chartConfig: null,
+      chartError: null,
+      analystText: '',
+      analystError: null,
+    };
+
+    const nodes = createNodes({
+      prisma: this.prisma,
+      sandbox: this.sandbox,
+      llm: this.llm,
+    });
+
+    const baseState: BiAgentState = {
+      question: input.question,
+      intent: input.intent,
+      relevant_tables: input.intent?.relevant_tables ?? [],
+      table_schema: '',
+      generated_sql: input.sql,
+      sql_result: null,
+      sql_error: null,
+      chart_config: null,
+      error_count: 0,
+      data_source_id: input.dataSourceId,
+      session_id: input.sessionId,
+      analyst_text: '',
+    };
+
+    yield { type: 'status', step: 'executing_sql', message: '正在沙盒中执行 SQL...' };
+    yield { type: 'sql', query: input.sql, status: 'executing' };
+
+    const exec = await nodes.sqlExecutorNode(baseState);
+    if (exec.sql_error || !exec.sql_result) {
+      const sqlError = exec.sql_error ?? '未知错误';
+      yield { type: 'sql', query: input.sql, status: 'error' };
+      yield { type: 'error', code: '1001', message: sqlError };
+      return { ...empty, sqlError };
+    }
+
+    const truncated =
+      exec.sql_result.rows.length > RESULT_ROW_LIMIT ||
+      exec.sql_result.rowCount > RESULT_ROW_LIMIT;
+    const sqlResult: QueryResult = {
+      columns: exec.sql_result.columns,
+      rows: exec.sql_result.rows.slice(0, RESULT_ROW_LIMIT),
+      rowCount: exec.sql_result.rowCount,
+      truncated,
+    };
+
+    yield { type: 'sql', query: input.sql, status: 'success' };
+    yield { type: 'result', data: sqlResult };
+
+    const afterSql: BiAgentState = {
+      ...baseState,
+      sql_result: sqlResult,
+      sql_error: null,
+    };
+
+    let chartConfig: Record<string, unknown> | null = null;
+    let chartError: string | null = null;
+    yield { type: 'status', step: 'generating_chart', message: '正在生成图表...' };
+    try {
+      const chartOut = await nodes.chartGeneratorNode(afterSql);
+      chartConfig = chartOut.chart_config ?? null;
+      if (chartConfig) {
+        yield { type: 'chart', config: chartConfig };
+      }
+    } catch (err) {
+      chartError = (err as Error).message ?? '图表生成失败';
+      yield {
+        type: 'error',
+        code: '1004',
+        message: `SQL 已保存，图表生成失败，可重试：${chartError}`,
+      };
+    }
+
+    let analystText = '';
+    let analystError: string | null = null;
+    yield { type: 'status', step: 'analyzing', message: '正在生成业务洞察...' };
+    try {
+      const resultSummary = JSON.stringify({
+        columns: sqlResult.columns,
+        rowCount: sqlResult.rowCount,
+        sampleRows: sqlResult.rows.slice(0, 50),
+      });
+      const model = this.llm.create({ streaming: true });
+      const stream = await model.stream([
+        new SystemMessage(ANALYST_SYSTEM_PROMPT),
+        new HumanMessage(
+          `用户问题：${input.question}\n查询结果摘要：${resultSummary}`,
+        ),
+      ]);
+      for await (const chunk of stream) {
+        if (input.signal?.aborted) break;
+        const content = chunkText(chunk);
+        if (content) {
+          analystText += content;
+          yield { type: 'token', content };
+        }
+      }
+    } catch (err) {
+      analystError = (err as Error).message ?? '洞察生成失败';
+      yield {
+        type: 'error',
+        code: '1004',
+        message: `SQL 已保存，业务洞察生成失败，可重试：${analystError}`,
+      };
+    }
+
+    return {
+      sqlResult,
+      sqlError: null,
+      truncated,
+      chartConfig,
+      chartError,
+      analystText,
+      analystError,
     };
   }
 }

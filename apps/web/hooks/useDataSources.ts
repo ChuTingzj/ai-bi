@@ -11,10 +11,18 @@ export function useDataSources() {
   });
 }
 
+export function useDataSourceDetail(id: string | undefined) {
+  return useQuery({
+    queryKey: ['datasources', id],
+    queryFn: () => api.get<DataSourceDto>(`/api/datasources/${id}`),
+    enabled: !!id,
+  });
+}
+
 export function useCreateDataSource() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: Record<string, unknown>) =>
+    mutationFn: (input: object) =>
       api.post<DataSourceDto & { message: string }>('/api/datasources', input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['datasources'] }),
   });

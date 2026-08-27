@@ -2,7 +2,12 @@
 
 import { useEffect, useReducer, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { AgentStep } from '@ai-bi/shared';
+import {
+  DEFAULT_SESSION_TITLE,
+  heuristicTitle,
+  type AgentStep,
+  type SessionDto,
+} from '@ai-bi/shared';
 import { useMessages } from '@/hooks/useSessions';
 import { useDataSources } from '@/hooks/useDataSources';
 import { streamChat } from '@/lib/sse-client';
@@ -63,12 +68,16 @@ function reducer(state: ChatStreamState, action: Action): ChatStreamState {
   }
 }
 
+const STICK_TO_BOTTOM_PX = 96;
+
 export function ChatArea({ sessionId }: { sessionId: string }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const queryClient = useQueryClient();
   const { data: messagesData } = useMessages(sessionId);
   const { data: dataSources } = useDataSources();
   const abortRef = useRef<AbortController | null>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
 
   useEffect(() => {
     return () => {
@@ -76,13 +85,55 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
     };
   }, []);
 
+  useEffect(() => {
+    stickToBottomRef.current = true;
+  }, [sessionId]);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const content = scroller?.firstElementChild;
+    if (!scroller || !content) return;
+
+    const pinToBottom = () => {
+      if (!stickToBottomRef.current) return;
+      scroller.scrollTop = scroller.scrollHeight;
+    };
+
+    const observer = new ResizeObserver(pinToBottom);
+    observer.observe(content);
+    pinToBottom();
+    return () => observer.disconnect();
+  }, [sessionId]);
+
   const defaultDataSourceId = dataSources?.[0]?.id;
+
+  function patchSessionTitle(title: string) {
+    queryClient.setQueryData<SessionDto[]>(['sessions'], (prev) => {
+      if (!prev) return prev;
+      return prev.map((s) => (s.id === sessionId ? { ...s, title } : s));
+    });
+  }
+
+  function handleScrollerScroll() {
+    const el = scrollerRef.current;
+    if (!el) return;
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < STICK_TO_BOTTOM_PX;
+  }
 
   async function handleSend(message: string) {
     if (state.isStreaming) return;
 
+    stickToBottomRef.current = true;
     dispatch({ type: 'START', question: message });
     abortRef.current = new AbortController();
+
+    const sessions = queryClient.getQueryData<SessionDto[]>(['sessions']);
+    const current = sessions?.find((s) => s.id === sessionId);
+    const hasUserMessage = messagesData?.items?.some((m) => m.role === 'USER');
+    if (current?.title === DEFAULT_SESSION_TITLE && !hasUserMessage) {
+      patchSessionTitle(heuristicTitle(message));
+    }
 
     try {
       for await (const event of streamChat(
@@ -105,6 +156,13 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
             if (event.status === 'generated') {
               dispatch({ type: 'SQL', query: event.query });
             }
+            break;
+          case 'title':
+            patchSessionTitle(event.title);
+            void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            break;
+          case 'intent':
+          case 'result':
             break;
           case 'error':
             dispatch({ type: 'ERROR', message: event.message });
@@ -135,26 +193,33 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto">
-        <MessageList
-          messages={messagesData?.items ?? []}
-          streaming={
-            state.isStreaming || state.error
-              ? {
-                  question: state.pendingQuestion,
-                  content: state.streamingContent,
-                  chart: state.streamingChart,
-                  sql: state.streamingSql,
-                  error: state.error,
-                }
-              : null
-          }
-          onAddToDashboard={handleAddToDashboard}
-        />
-        {state.isStreaming && state.currentStep && (
-          <StreamingIndicator step={state.currentStep} message={state.stepMessage} />
-        )}
+    <div className="flex h-full min-h-0 flex-col">
+      <div
+        ref={scrollerRef}
+        onScroll={handleScrollerScroll}
+        className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable]"
+      >
+        <div>
+          <MessageList
+            messages={messagesData?.items ?? []}
+            sessionId={sessionId}
+            streaming={
+              state.isStreaming || state.error
+                ? {
+                    question: state.pendingQuestion,
+                    content: state.streamingContent,
+                    chart: state.streamingChart,
+                    sql: state.streamingSql,
+                    error: state.error,
+                  }
+                : null
+            }
+            onAddToDashboard={handleAddToDashboard}
+          />
+          {state.isStreaming && state.currentStep && (
+            <StreamingIndicator step={state.currentStep} message={state.stepMessage} />
+          )}
+        </div>
       </div>
 
       <ChatInput

@@ -92,6 +92,8 @@ model Message {
   role        MessageRole
   content     String      @db.Text
   sqlQuery    String?     @map("sql_query") @db.Text
+  intent      Json?
+  sqlEdited   Boolean     @default(false) @map("sql_edited")
   chartConfig Json?       @map("chart_config")
   createdAt   DateTime    @default(now()) @map("created_at")
 

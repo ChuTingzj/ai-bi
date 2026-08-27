@@ -1,7 +1,7 @@
 'use client';
 
 import { use } from 'react';
-import { Sidebar } from '@/components/layout/Sidebar';
+import { AppShell } from '@/components/layout/AppShell';
 import { ChatArea } from './_components/ChatArea';
 
 export default function ChatPage({
@@ -12,11 +12,8 @@ export default function ChatPage({
   const { sessionId } = use(params);
 
   return (
-    <div className="flex h-screen">
-      <Sidebar />
-      <main className="flex flex-1 flex-col">
-        <ChatArea sessionId={sessionId} />
-      </main>
-    </div>
+    <AppShell>
+      <ChatArea sessionId={sessionId} />
+    </AppShell>
   );
 }

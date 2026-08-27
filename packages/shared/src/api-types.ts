@@ -1,3 +1,5 @@
+import type { QueryIntent } from './agent-types';
+
 export interface ApiResponse<T = unknown> {
   code: number;
   data?: T;
@@ -15,6 +17,7 @@ export enum ErrorCode {
   SQL_SANDBOX_ERROR = 1001,
   DATASOURCE_CONNECTION_FAILED = 1002,
   AGENT_MAX_RETRY_EXCEEDED = 1003,
+  CHART_GENERATION_FAILED = 1004,
 }
 
 export type UserRole = 'USER' | 'ADMIN';
@@ -49,6 +52,8 @@ export interface MessageDto {
   role: MessageRole;
   content: string;
   sqlQuery?: string | null;
+  intent?: QueryIntent | null;
+  sqlEdited?: boolean;
   chartConfig?: Record<string, unknown> | null;
   createdAt: string;
 }
@@ -72,6 +77,7 @@ export interface DataSourceDto {
   connectionStatus: ConnectionStatus;
   lastSyncAt: string | null;
   createdAt: string;
+  schemaDoc?: string | null;
 }
 
 export interface ChartPosition {
@@ -93,5 +99,12 @@ export interface DashboardChartDto {
 export interface ChatStreamRequest {
   sessionId: string;
   message: string;
+  dataSourceId?: string;
+}
+
+export interface LabRunRequest {
+  sessionId: string;
+  sql: string;
+  messageId?: string;
   dataSourceId?: string;
 }

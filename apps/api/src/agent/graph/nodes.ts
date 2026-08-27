@@ -163,14 +163,30 @@ export function createNodes(deps: NodeDeps) {
     });
 
     const model = llm.create({ streaming: true });
-    await model.invoke([
+    const response = await model.invoke([
       new SystemMessage(ANALYST_SYSTEM_PROMPT),
       new HumanMessage(
         `用户问题：${state.question}\n查询结果摘要：${resultSummary}`,
       ),
     ]);
 
-    return {};
+    const content = response.content;
+    const analystText =
+      typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content
+              .map((part) =>
+                typeof part === 'string'
+                  ? part
+                  : part && typeof part === 'object' && 'text' in part
+                    ? String((part as { text?: unknown }).text ?? '')
+                    : '',
+              )
+              .join('')
+          : String(content ?? '');
+
+    return { analyst_text: analystText };
   }
 
   return {

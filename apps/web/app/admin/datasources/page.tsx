@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Sidebar } from '@/components/layout/Sidebar';
+import { AppShell } from '@/components/layout/AppShell';
 import {
   useDataSources,
   useCreateDataSource,
@@ -19,19 +19,18 @@ export default function DataSourcesPage() {
   const [feedback, setFeedback] = useState('');
 
   return (
-    <div className="flex h-screen">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">
+    <AppShell>
+      <div className="flex-1 overflow-y-auto p-6">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">数据源管理</h1>
-            <p className="text-sm text-slate-500">
+            <h1 className="text-2xl font-bold text-foreground">数据源管理</h1>
+            <p className="text-sm text-muted-foreground">
               接入只读数据库账号，同步表结构后即可开始对话查询
             </p>
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="min-h-11 cursor-pointer rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary transition-colors hover:opacity-90"
           >
             {showForm ? '取消' : '+ 接入数据源'}
           </button>
@@ -58,13 +57,13 @@ export default function DataSourcesPage() {
           />
         )}
 
-        {isLoading && <p className="text-slate-400">加载中...</p>}
+        {isLoading && <p className="text-muted-foreground">加载中...</p>}
 
         <div className="space-y-3">
           {dataSources?.map((ds) => (
             <div
               key={ds.id}
-              className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4"
+              className="flex items-center justify-between rounded-xl border border-border bg-card p-4"
             >
               <div>
                 <div className="flex items-center gap-2">
@@ -79,10 +78,10 @@ export default function DataSourcesPage() {
                     {ds.connectionStatus === 'CONNECTED' ? '已连接' : '连接异常'}
                   </span>
                 </div>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-muted-foreground">
                   {ds.type} · {ds.host}:{ds.port}/{ds.database} · 用户 {ds.username}
                 </p>
-                <p className="mt-0.5 text-xs text-slate-400">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {ds.lastSyncAt
                     ? `表结构同步于 ${new Date(ds.lastSyncAt).toLocaleString()}`
                     : '尚未同步表结构'}
@@ -98,7 +97,7 @@ export default function DataSourcesPage() {
                     })
                   }
                   disabled={syncSchema.isPending}
-                  className="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                  className="min-h-11 cursor-pointer rounded-lg border border-border-strong px-3 py-1.5 text-sm text-primary hover:bg-muted disabled:opacity-50"
                 >
                   {syncSchema.isPending ? '同步中...' : '同步 Schema'}
                 </button>
@@ -108,7 +107,7 @@ export default function DataSourcesPage() {
                       deleteDataSource.mutate(ds.id);
                     }
                   }}
-                  className="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-500 hover:bg-red-50"
+                  className="min-h-11 cursor-pointer rounded-lg border border-red-200 px-3 py-1.5 text-sm text-destructive hover:bg-red-50"
                 >
                   删除
                 </button>
@@ -116,7 +115,7 @@ export default function DataSourcesPage() {
             </div>
           ))}
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

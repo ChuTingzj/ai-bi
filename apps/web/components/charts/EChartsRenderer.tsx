@@ -7,11 +7,11 @@ import type ReactEChartsCore from 'echarts-for-react';
 const ReactECharts = dynamic(() => import('echarts-for-react'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-96 items-center justify-center text-slate-400">
+    <div className="flex h-96 items-center justify-center text-muted-foreground">
       图表加载中...
     </div>
   ),
-});
+}) as typeof import('echarts-for-react').default;
 
 export function EChartsRenderer({
   config,
@@ -34,24 +34,26 @@ export function EChartsRenderer({
   }
 
   return (
-    <div className="group relative my-3 rounded-xl border border-slate-200 bg-white p-2">
+    <div className="group relative my-3 rounded-xl border border-border bg-card p-2">
       <ReactECharts
         ref={chartRef}
         option={config}
         style={{ height: 380, width: '100%' }}
         notMerge
       />
-      <div className="absolute right-3 top-3 hidden gap-2 group-hover:flex">
+      <div className="absolute right-3 top-3 z-10 hidden gap-2 group-hover:flex">
         <button
+          type="button"
           onClick={exportPng}
-          className="rounded-md bg-slate-800/80 px-2 py-1 text-xs text-white hover:bg-slate-800"
+          className="cursor-pointer rounded-md bg-slate-800 px-2 py-1 text-xs text-white shadow-sm hover:bg-slate-900"
         >
           导出 PNG
         </button>
         {onAddToDashboard && (
           <button
+            type="button"
             onClick={() => onAddToDashboard(config)}
-            className="rounded-md bg-blue-600/90 px-2 py-1 text-xs text-white hover:bg-blue-600"
+            className="cursor-pointer rounded-md bg-primary px-2 py-1 text-xs text-on-primary shadow-sm hover:opacity-90"
           >
             加入 Dashboard
           </button>

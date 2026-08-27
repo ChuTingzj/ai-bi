@@ -11,6 +11,7 @@ import { AgentModule } from './agent/agent.module';
 import { SandboxModule } from './sandbox/sandbox.module';
 import { DataSourceModule } from './datasource/datasource.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { LabModule } from './lab/lab.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -26,6 +27,7 @@ import { HealthController } from './health.controller';
     SandboxModule,
     DataSourceModule,
     DashboardModule,
+    LabModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
