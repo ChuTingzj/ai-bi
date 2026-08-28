@@ -1,4 +1,5 @@
 import type { QueryIntent } from './agent-types';
+import type { GuidanceMessageIntent, GuidancePayload } from './guidance-types';
 
 export interface ApiResponse<T = unknown> {
   code: number;
@@ -18,7 +19,11 @@ export enum ErrorCode {
   DATASOURCE_CONNECTION_FAILED = 1002,
   AGENT_MAX_RETRY_EXCEEDED = 1003,
   CHART_GENERATION_FAILED = 1004,
+  /** Intent still failed after user completed guidance wizard */
+  GUIDANCE_INTENT_FAILED = 1005,
 }
+
+export type MessageIntent = QueryIntent | GuidanceMessageIntent;
 
 export type UserRole = 'USER' | 'ADMIN';
 export type MessageRole = 'USER' | 'ASSISTANT';
@@ -52,7 +57,7 @@ export interface MessageDto {
   role: MessageRole;
   content: string;
   sqlQuery?: string | null;
-  intent?: QueryIntent | null;
+  intent?: MessageIntent | null;
   sqlEdited?: boolean;
   chartConfig?: Record<string, unknown> | null;
   createdAt: string;
@@ -100,6 +105,8 @@ export interface ChatStreamRequest {
   sessionId: string;
   message: string;
   dataSourceId?: string;
+  afterGuidance?: boolean;
+  guidance?: GuidancePayload;
 }
 
 export interface LabRunRequest {

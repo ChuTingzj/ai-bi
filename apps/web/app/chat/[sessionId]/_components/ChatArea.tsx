@@ -5,7 +5,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   DEFAULT_SESSION_TITLE,
   heuristicTitle,
+  isGuidanceMessageIntent,
   type AgentStep,
+  type GuidancePayload,
+  type SchemaTableMeta,
   type SessionDto,
 } from '@ai-bi/shared';
 import {
@@ -31,6 +34,10 @@ interface ChatStreamState {
   streamingSql: string | null;
   pendingQuestion: string | null;
   error: string | null;
+  liveGuidance: {
+    originalQuestion: string;
+    tables: SchemaTableMeta[];
+  } | null;
 }
 
 const initialState: ChatStreamState = {
@@ -42,6 +49,7 @@ const initialState: ChatStreamState = {
   streamingSql: null,
   pendingQuestion: null,
   error: null,
+  liveGuidance: null,
 };
 
 type Action =
@@ -50,6 +58,11 @@ type Action =
   | { type: 'TOKEN'; content: string }
   | { type: 'CHART'; config: Record<string, unknown> }
   | { type: 'SQL'; query: string }
+  | {
+      type: 'GUIDANCE';
+      originalQuestion: string;
+      tables: SchemaTableMeta[];
+    }
   | { type: 'ERROR'; message: string }
   | { type: 'RESET' };
 
@@ -65,6 +78,15 @@ function reducer(state: ChatStreamState, action: Action): ChatStreamState {
       return { ...state, streamingChart: action.config };
     case 'SQL':
       return { ...state, streamingSql: action.query };
+    case 'GUIDANCE':
+      return {
+        ...state,
+        isStreaming: false,
+        liveGuidance: {
+          originalQuestion: action.originalQuestion,
+          tables: action.tables,
+        },
+      };
     case 'ERROR':
       return { ...state, error: action.message, isStreaming: false };
     case 'RESET':
@@ -137,7 +159,10 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
       el.scrollHeight - el.scrollTop - el.clientHeight < STICK_TO_BOTTOM_PX;
   }
 
-  async function handleSend(message: string) {
+  async function runStream(
+    message: string,
+    options?: { afterGuidance?: boolean; guidance?: GuidancePayload },
+  ) {
     if (state.isStreaming || !boundDataSourceId) return;
 
     stickToBottomRef.current = true;
@@ -151,9 +176,13 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
 
     try {
       for await (const event of streamChat(
-        sessionId,
-        message,
-        boundDataSourceId,
+        {
+          sessionId,
+          message,
+          dataSourceId: boundDataSourceId,
+          afterGuidance: options?.afterGuidance,
+          guidance: options?.guidance,
+        },
         abortRef.current.signal,
       )) {
         switch (event.type) {
@@ -175,6 +204,13 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
             patchSessionTitle(event.title);
             void queryClient.invalidateQueries({ queryKey: ['sessions'] });
             break;
+          case 'guidance':
+            dispatch({
+              type: 'GUIDANCE',
+              originalQuestion: event.originalQuestion,
+              tables: event.tables,
+            });
+            break;
           case 'intent':
           case 'result':
             break;
@@ -191,8 +227,20 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
       }
     } finally {
       await queryClient.invalidateQueries({ queryKey: ['messages', sessionId] });
+      // Keep live guidance only until messages refetch; then RESET clears it
       dispatch({ type: 'RESET' });
     }
+  }
+
+  async function handleSend(message: string) {
+    await runStream(message);
+  }
+
+  async function handleGuidanceSubmit(
+    message: string,
+    guidance: GuidancePayload,
+  ) {
+    await runStream(message, { afterGuidance: true, guidance });
   }
 
   async function handleAddToDashboard(config: Record<string, unknown>) {
@@ -218,6 +266,14 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
       ? '请先选择数据源后再提问'
       : '输入问题，例如：对比过去三个月华东区和华南区的销售额趋势';
 
+  const inputDisabled =
+    state.isStreaming ||
+    !boundDataSourceId ||
+    !!state.liveGuidance ||
+    !!(messagesData?.items ?? []).some(
+      (m) => isGuidanceMessageIntent(m.intent) && !m.intent.completed,
+    );
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ChatHeader
@@ -236,14 +292,17 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
             messages={messagesData?.items ?? []}
             sessionId={sessionId}
             emptyHint={emptyHint}
+            guidanceDisabled={state.isStreaming}
+            onGuidanceSubmit={handleGuidanceSubmit}
             streaming={
-              state.isStreaming || state.error
+              state.isStreaming || state.error || state.liveGuidance
                 ? {
                     question: state.pendingQuestion,
                     content: state.streamingContent,
                     chart: state.streamingChart,
                     sql: state.streamingSql,
                     error: state.error,
+                    guidance: state.liveGuidance,
                   }
                 : null
             }
@@ -256,8 +315,15 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
       </div>
 
       <ChatInput
-        disabled={state.isStreaming || !boundDataSourceId}
-        placeholder={placeholder}
+        disabled={inputDisabled}
+        placeholder={
+          state.liveGuidance ||
+          (messagesData?.items ?? []).some(
+            (m) => isGuidanceMessageIntent(m.intent) && !m.intent.completed,
+          )
+            ? '请先完成上方引导步骤'
+            : placeholder
+        }
         onSend={handleSend}
       />
     </div>

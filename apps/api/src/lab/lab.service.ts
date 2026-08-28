@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import type { QueryIntent, SseEvent } from '@ai-bi/shared';
+import { isGuidanceMessageIntent } from '@ai-bi/shared';
 import { Prisma } from '@ai-bi/db';
 import { AgentService } from '../agent/agent.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -85,9 +86,13 @@ export class LabService {
           if (message.role !== 'ASSISTANT') {
             throw new BadRequestException('只能基于助手消息运行自定义 SQL');
           }
+          const rawIntent = message.intent;
           existing = {
             id: message.id,
-            intent: (message.intent as QueryIntent | null) ?? null,
+            intent:
+              rawIntent && !isGuidanceMessageIntent(rawIntent)
+                ? (rawIntent as unknown as QueryIntent)
+                : null,
             chartConfig:
               (message.chartConfig as Record<string, unknown> | null) ?? null,
             content: message.content,

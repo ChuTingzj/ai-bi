@@ -1,5 +1,9 @@
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import type { QueryIntent } from '@ai-bi/shared';
+import {
+  filterValidTables,
+  type GuidancePayload,
+  type QueryIntent,
+} from '@ai-bi/shared';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { SandboxService } from '../../sandbox/sandbox.service';
 import type { LlmService } from '../llm.service';
@@ -18,6 +22,21 @@ function stripCodeFence(text: string): string {
     .trim();
 }
 
+function formatGuidanceBlock(guidance: GuidancePayload): string {
+  const filterLines = guidance.filters.map((f) => {
+    if (f.operator === 'IS NULL' || f.operator === 'IS NOT NULL') {
+      return `${f.field} ${f.operator}`;
+    }
+    return `${f.field} ${f.operator} ${f.value ?? ''}`;
+  });
+  return [
+    '用户引导约束（必须遵守）：',
+    `表：${guidance.tables.join(', ') || '（未选）'}`,
+    `字段：${guidance.fields.join(', ') || '（未选）'}`,
+    `过滤：${filterLines.join(' AND ') || '（无）'}`,
+  ].join('\n');
+}
+
 export interface NodeDeps {
   prisma: PrismaService;
   sandbox: SandboxService;
@@ -32,25 +51,45 @@ export function createNodes(deps: NodeDeps) {
       where: { id: state.data_source_id },
       select: { schemaDoc: true },
     });
+    const schemaDoc = dataSource?.schemaDoc ?? '';
     // schemaDoc 摘要：只取表名行，控制 token 消耗
-    const schemaSummary = (dataSource?.schemaDoc ?? '')
+    const schemaSummary = schemaDoc
       .split('\n')
       .filter((line) => /CREATE TABLE|^--/i.test(line))
       .join('\n')
       .slice(0, 4000);
 
+    const userParts = [
+      `问题：${state.question}`,
+      `可用表摘要：\n${schemaSummary || '（未同步表结构）'}`,
+    ];
+    if (state.guidance) {
+      userParts.push(formatGuidanceBlock(state.guidance));
+    }
+
     const model = llm.create({ jsonMode: true });
     const response = await model.invoke([
       new SystemMessage(PLANNER_SYSTEM_PROMPT),
-      new HumanMessage(
-        `问题：${state.question}\n可用表摘要：\n${schemaSummary || '（未同步表结构）'}`,
-      ),
+      new HumanMessage(userParts.join('\n\n')),
     ]);
 
     const intent = JSON.parse(stripCodeFence(String(response.content))) as QueryIntent;
+    let relevant_tables = intent.relevant_tables ?? [];
+
+    // Prefer user-selected tables when guidance is present
+    if (state.guidance?.tables?.length) {
+      relevant_tables = [
+        ...new Set([...state.guidance.tables, ...relevant_tables]),
+      ];
+      intent.relevant_tables = relevant_tables;
+    }
+
+    const validTables = filterValidTables(schemaDoc, relevant_tables);
+
     return {
       intent,
-      relevant_tables: intent.relevant_tables ?? [],
+      relevant_tables: validTables,
+      schema_doc: schemaDoc,
     };
   }
 
@@ -154,6 +193,16 @@ export function createNodes(deps: NodeDeps) {
     return {};
   }
 
+  /** 首次意图失败：进入前端引导模式 */
+  async function guidanceExitNode(_state: BiAgentState) {
+    return {};
+  }
+
+  /** 引导后仍无有效表：直接失败退出 */
+  async function intentFailExitNode(_state: BiAgentState) {
+    return {};
+  }
+
   /** Analyst Agent：图内调用 LLM，streamEvents 会转发 on_chat_model_stream */
   async function analystNode(state: BiAgentState) {
     const resultSummary = JSON.stringify({
@@ -197,5 +246,7 @@ export function createNodes(deps: NodeDeps) {
     chartGeneratorNode,
     analystNode,
     fallbackNode,
+    guidanceExitNode,
+    intentFailExitNode,
   };
 }

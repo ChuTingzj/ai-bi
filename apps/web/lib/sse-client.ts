@@ -1,4 +1,4 @@
-import type { LabRunRequest, SseEvent } from '@ai-bi/shared';
+import type { ChatStreamRequest, LabRunRequest, SseEvent } from '@ai-bi/shared';
 import { getAccessToken } from './auth';
 
 async function* readSse(response: Response): AsyncGenerator<SseEvent> {
@@ -36,9 +36,7 @@ async function* readSse(response: Response): AsyncGenerator<SseEvent> {
 }
 
 export async function* streamChat(
-  sessionId: string,
-  message: string,
-  dataSourceId?: string,
+  request: ChatStreamRequest,
   signal?: AbortSignal,
 ): AsyncGenerator<SseEvent> {
   const response = await fetch('/sse/chat', {
@@ -47,7 +45,7 @@ export async function* streamChat(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${getAccessToken()}`,
     },
-    body: JSON.stringify({ sessionId, message, dataSourceId }),
+    body: JSON.stringify(request),
     signal,
   });
 

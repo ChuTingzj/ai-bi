@@ -3,20 +3,32 @@
 import Link from 'next/link';
 import { Copy, Code } from '@phosphor-icons/react';
 import { useState } from 'react';
-import type { MessageDto } from '@ai-bi/shared';
+import {
+  isGuidanceMessageIntent,
+  type GuidancePayload,
+  type MessageDto,
+} from '@ai-bi/shared';
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer';
 import { EChartsRenderer } from '@/components/charts/EChartsRenderer';
+import {
+  GuidanceSummaryReadonly,
+  GuidanceWizard,
+} from './guidance/GuidanceWizard';
 
 export function MessageBubble({
   message,
   sessionId,
   onAddToDashboard,
   isError = false,
+  guidanceDisabled = false,
+  onGuidanceSubmit,
 }: {
   message: MessageDto;
   sessionId?: string;
   onAddToDashboard: (config: Record<string, unknown>) => void;
   isError?: boolean;
+  guidanceDisabled?: boolean;
+  onGuidanceSubmit?: (message: string, guidance: GuidancePayload) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'USER';
@@ -24,6 +36,11 @@ export function MessageBubble({
     ? message.sqlQuery.split('\n').length
     : 0;
   const canOpenLab = Boolean(sessionId && message.sqlQuery && !message.id.startsWith('pending-'));
+  const guidanceIntent = isGuidanceMessageIntent(message.intent)
+    ? message.intent
+    : null;
+  const showWizard =
+    !!guidanceIntent && !guidanceIntent.completed && !!onGuidanceSubmit;
 
   async function copySql() {
     if (!message.sqlQuery) return;
@@ -88,6 +105,18 @@ export function MessageBubble({
             content={message.content}
             onAddToDashboard={onAddToDashboard}
           />
+        )}
+
+        {showWizard && guidanceIntent && (
+          <GuidanceWizard
+            intent={guidanceIntent}
+            disabled={guidanceDisabled}
+            onSubmit={onGuidanceSubmit}
+          />
+        )}
+
+        {guidanceIntent?.completed && (
+          <GuidanceSummaryReadonly intent={guidanceIntent} />
         )}
 
         {message.chartConfig && (

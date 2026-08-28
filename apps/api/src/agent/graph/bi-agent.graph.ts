@@ -11,6 +11,16 @@ export function routeAfterSqlExecution(state: BiAgentState): string {
   return 'fallback';
 }
 
+/**
+ * After planner: continue only when at least one recalled table exists in schema.
+ * Otherwise enter guidance (first failure) or intent-fail exit (after guidance).
+ */
+export function routeAfterPlanner(state: BiAgentState): string {
+  if (state.relevant_tables.length > 0) return 'schemaFetcher';
+  if (state.after_guidance) return 'intentFailExit';
+  return 'guidanceExit';
+}
+
 export function buildBiAgentGraph(
   deps: NodeDeps,
   checkpointer?: BaseCheckpointSaver,
@@ -28,8 +38,14 @@ export function buildBiAgentGraph(
     .addNode('chartGenerator', nodes.chartGeneratorNode)
     .addNode('analyst', nodes.analystNode)
     .addNode('fallback', nodes.fallbackNode)
+    .addNode('guidanceExit', nodes.guidanceExitNode)
+    .addNode('intentFailExit', nodes.intentFailExitNode)
     .addEdge(START, 'planner')
-    .addEdge('planner', 'schemaFetcher')
+    .addConditionalEdges('planner', routeAfterPlanner, {
+      schemaFetcher: 'schemaFetcher',
+      guidanceExit: 'guidanceExit',
+      intentFailExit: 'intentFailExit',
+    })
     .addEdge('schemaFetcher', 'sqlGenerator')
     .addEdge('sqlGenerator', 'sqlExecutor')
     .addConditionalEdges('sqlExecutor', routeAfterSqlExecution, {
@@ -39,7 +55,9 @@ export function buildBiAgentGraph(
     })
     .addEdge('chartGenerator', 'analyst')
     .addEdge('analyst', END)
-    .addEdge('fallback', END);
+    .addEdge('fallback', END)
+    .addEdge('guidanceExit', END)
+    .addEdge('intentFailExit', END);
 
   return graph.compile(checkpointer ? { checkpointer } : undefined);
 }

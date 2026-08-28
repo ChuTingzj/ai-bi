@@ -1,12 +1,14 @@
 'use client';
 
 import { useMemo } from 'react';
+import { parseSchemaDoc } from '@ai-bi/shared';
 
 export interface SchemaTable {
   name: string;
   ddl: string;
 }
 
+/** @deprecated Prefer parseSchemaDoc from @ai-bi/shared for table+column metadata */
 export function parseSchemaTables(schemaDoc: string): SchemaTable[] {
   return schemaDoc
     .split(/(?=CREATE TABLE)/i)
@@ -26,7 +28,7 @@ export function SchemaBrowser({
   onInsert: (tableName: string) => void;
 }) {
   const tables = useMemo(
-    () => (schemaDoc ? parseSchemaTables(schemaDoc) : []),
+    () => (schemaDoc ? parseSchemaDoc(schemaDoc) : []),
     [schemaDoc],
   );
 
@@ -48,7 +50,7 @@ export function SchemaBrowser({
           <button
             key={table.name}
             type="button"
-            title={table.ddl}
+            title={table.columns.map((c) => c.name).join(', ') || table.name}
             onClick={() => onInsert(table.name)}
             className="mb-1 flex min-h-11 w-full cursor-pointer items-center rounded-lg px-2 py-1.5 text-left font-mono text-xs text-foreground hover:bg-muted"
           >

@@ -1,5 +1,5 @@
 import { Annotation } from '@langchain/langgraph';
-import type { QueryIntent, QueryResult } from '@ai-bi/shared';
+import type { GuidancePayload, QueryIntent, QueryResult } from '@ai-bi/shared';
 
 export const BiAgentStateAnnotation = Annotation.Root({
   question: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
@@ -35,6 +35,19 @@ export const BiAgentStateAnnotation = Annotation.Root({
   }),
   session_id: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
   analyst_text: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
+  after_guidance: Annotation<boolean>({
+    reducer: (_, b) => b,
+    default: () => false,
+  }),
+  guidance: Annotation<GuidancePayload | null>({
+    reducer: (_, b) => b,
+    default: () => null,
+  }),
+  /** SchemaDoc snapshot used for post-planner table validation / guidance SSE */
+  schema_doc: Annotation<string>({
+    reducer: (_, b) => b,
+    default: () => '',
+  }),
 });
 
 export type BiAgentState = typeof BiAgentStateAnnotation.State;
@@ -49,6 +62,8 @@ export interface BenchmarkRunResult {
   chart_config: Record<string, unknown> | null;
   analyst_text: string;
   fallback: boolean;
+  guidance_triggered?: boolean;
+  intent_fail?: boolean;
   sql_attempts: number;
   latencies_ms: Record<string, number>;
   total_latency_ms: number;

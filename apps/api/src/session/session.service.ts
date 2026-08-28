@@ -3,7 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DEFAULT_SESSION_TITLE, type QueryIntent } from '@ai-bi/shared';
+import {
+  DEFAULT_SESSION_TITLE,
+  type MessageIntent,
+} from '@ai-bi/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSessionDto, UpdateSessionDto } from './session.dto';
 
@@ -78,7 +81,7 @@ export class SessionService {
         role: m.role,
         content: m.content,
         sqlQuery: m.sqlQuery,
-        intent: (m.intent as QueryIntent | null) ?? null,
+        intent: (m.intent as MessageIntent | null) ?? null,
         sqlEdited: m.sqlEdited,
         chartConfig: (m.chartConfig as Record<string, unknown> | null) ?? null,
         createdAt: m.createdAt.toISOString(),

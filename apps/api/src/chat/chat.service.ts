@@ -6,7 +6,13 @@ import { SessionService } from '../session/session.service';
 import { SessionTitleService } from '../session/session-title.service';
 import { UserPayload } from '../common/current-user.decorator';
 import { ChatStreamDto } from './chat.dto';
-import { DEFAULT_SESSION_TITLE, type QueryIntent, type SseEvent } from '@ai-bi/shared';
+import {
+  DEFAULT_SESSION_TITLE,
+  type GuidanceMessageIntent,
+  type MessageIntent,
+  type SseEvent,
+} from '@ai-bi/shared';
+import { GUIDANCE_INTRO_MESSAGE as API_GUIDANCE_INTRO } from '../agent/graph/prompts';
 
 interface SseMessage {
   data: string;
@@ -71,6 +77,11 @@ export class ChatService {
           },
         });
 
+        // Mark prior incomplete guidance messages as completed when user resubmits after wizard
+        if (dto.afterGuidance) {
+          await this.markGuidanceCompleted(dto.sessionId, dto.guidance);
+        }
+
         let titleEmitted = false;
         const emitTitle = (title: string) => {
           if (!title || titleEmitted) return;
@@ -100,7 +111,7 @@ export class ChatService {
         let fullContent = '';
         let chartConfig: Record<string, unknown> | null = null;
         let sqlQuery: string | null = null;
-        let intent: QueryIntent | null = null;
+        let intent: MessageIntent | null = null;
 
         const generator = this.agentService.invokeWorkflow({
           sessionId: dto.sessionId,
@@ -108,6 +119,8 @@ export class ChatService {
           dataSourceId,
           userId: user.id,
           signal: abortController.signal,
+          afterGuidance: dto.afterGuidance,
+          guidance: dto.guidance,
         });
 
         for await (const event of generator) {
@@ -120,6 +133,16 @@ export class ChatService {
           if (event.type === 'sql' && event.status === 'generated')
             sqlQuery = event.query;
           if (event.type === 'error') fullContent = fullContent || event.message;
+          if (event.type === 'guidance') {
+            const guidanceIntent: GuidanceMessageIntent = {
+              kind: 'guidance',
+              originalQuestion: event.originalQuestion,
+              tables: event.tables,
+              completed: false,
+            };
+            intent = guidanceIntent;
+            if (!fullContent) fullContent = API_GUIDANCE_INTRO;
+          }
         }
 
         if (aborted) return;
@@ -163,5 +186,34 @@ export class ChatService {
         abortController.abort();
       };
     });
+  }
+
+  /** Mark open guidance assistant messages in this session as completed. */
+  private async markGuidanceCompleted(
+    sessionId: string,
+    selection?: ChatStreamDto['guidance'],
+  ) {
+    const recent = await this.prisma.message.findMany({
+      where: { sessionId, role: 'ASSISTANT' },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+
+    for (const msg of recent) {
+      const intent = msg.intent as GuidanceMessageIntent | null;
+      if (!intent || intent.kind !== 'guidance' || intent.completed) continue;
+
+      await this.prisma.message.update({
+        where: { id: msg.id },
+        data: {
+          intent: {
+            ...intent,
+            completed: true,
+            selection: selection ?? intent.selection,
+          } as object,
+        },
+      });
+      break;
+    }
   }
 }

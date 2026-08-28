@@ -1,4 +1,5 @@
 import type { QueryIntent, QueryResult } from './agent-types';
+import type { SchemaTableMeta } from './guidance-types';
 
 export type AgentStep =
   | 'planning'
@@ -17,6 +18,11 @@ export type SseEvent =
   | { type: 'sql'; query: string; status: SqlStatus }
   | { type: 'result'; data: QueryResult }
   | { type: 'intent'; intent: QueryIntent }
+  | {
+      type: 'guidance';
+      originalQuestion: string;
+      tables: SchemaTableMeta[];
+    }
   | { type: 'status'; step: AgentStep; message: string }
   | { type: 'error'; code: string; message: string }
   | { type: 'title'; title: string }

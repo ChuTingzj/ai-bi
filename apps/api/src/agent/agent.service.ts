@@ -1,13 +1,24 @@
 import { randomUUID } from 'crypto';
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
-import type { QueryIntent, QueryResult, SseEvent } from '@ai-bi/shared';
+import type {
+  GuidancePayload,
+  QueryIntent,
+  QueryResult,
+  SseEvent,
+} from '@ai-bi/shared';
+import { parseSchemaDoc } from '@ai-bi/shared';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { PrismaService } from '../prisma/prisma.service';
 import { SandboxService } from '../sandbox/sandbox.service';
 import { LlmService } from './llm.service';
 import { buildBiAgentGraph } from './graph/bi-agent.graph';
-import { ANALYST_SYSTEM_PROMPT, FALLBACK_MESSAGE } from './graph/prompts';
+import {
+  ANALYST_SYSTEM_PROMPT,
+  FALLBACK_MESSAGE,
+  GUIDANCE_FAIL_MESSAGE,
+  GUIDANCE_INTRO_MESSAGE,
+} from './graph/prompts';
 import { createNodes } from './graph/nodes';
 import type { BiAgentState, BenchmarkRunResult } from './graph/state';
 
@@ -17,6 +28,8 @@ export interface WorkflowInput {
   dataSourceId: string;
   userId: string;
   signal?: AbortSignal;
+  afterGuidance?: boolean;
+  guidance?: GuidancePayload;
 }
 
 export interface LabRerunInput {
@@ -64,6 +77,8 @@ const NODE_NAMES = new Set([
   'chartGenerator',
   'analyst',
   'fallback',
+  'guidanceExit',
+  'intentFailExit',
 ]);
 
 @Injectable()
@@ -105,6 +120,9 @@ export class AgentService implements OnModuleInit {
         sql_result: null,
         sql_error: null,
         chart_config: null,
+        after_guidance: input.afterGuidance ?? false,
+        guidance: input.guidance ?? null,
+        schema_doc: '',
       },
       {
         version: 'v2' as const,
@@ -117,6 +135,8 @@ export class AgentService implements OnModuleInit {
     let retryCount = 0;
     let lastSql = '';
     let lastSqlError = '';
+    let lastSchemaDoc = '';
+    let lastQuestion = input.question;
 
     for await (const event of stream) {
       const nodeName = (event.metadata?.langgraph_node ?? event.name) as string;
@@ -156,8 +176,11 @@ export class AgentService implements OnModuleInit {
       if (event.event === 'on_chain_end' && NODE_NAMES.has(event.name)) {
         const output = (event.data?.output ?? {}) as Partial<BiAgentState>;
 
-        if (event.name === 'planner' && output.intent) {
-          yield { type: 'intent', intent: output.intent };
+        if (event.name === 'planner') {
+          if (output.schema_doc) lastSchemaDoc = output.schema_doc;
+          if (output.intent) {
+            yield { type: 'intent', intent: output.intent };
+          }
         }
 
         if (event.name === 'sqlGenerator' && output.generated_sql) {
@@ -183,6 +206,33 @@ export class AgentService implements OnModuleInit {
         if (event.name === 'fallback') {
           const detail = lastSqlError ? `\n\n最后一次错误：${lastSqlError}` : '';
           yield { type: 'error', code: '1003', message: FALLBACK_MESSAGE + detail };
+        }
+
+        if (event.name === 'guidanceExit') {
+          const schemaDoc =
+            lastSchemaDoc ||
+            (
+              await this.prisma.dataSource.findUnique({
+                where: { id: input.dataSourceId },
+                select: { schemaDoc: true },
+              })
+            )?.schemaDoc ||
+            '';
+          yield {
+            type: 'guidance',
+            originalQuestion: lastQuestion,
+            tables: parseSchemaDoc(schemaDoc),
+          };
+          // Intro text also flows as token so chat can show copy immediately
+          yield { type: 'token', content: GUIDANCE_INTRO_MESSAGE };
+        }
+
+        if (event.name === 'intentFailExit') {
+          yield {
+            type: 'error',
+            code: '1005',
+            message: GUIDANCE_FAIL_MESSAGE,
+          };
         }
       }
 
@@ -214,6 +264,8 @@ export class AgentService implements OnModuleInit {
     let chart_config: BenchmarkRunResult['chart_config'] = null;
     let analyst_text = '';
     let fallback = false;
+    let guidance_triggered = false;
+    let intent_fail = false;
     let sql_attempts = 0;
 
     const stream = this.compiledGraph.streamEvents(
@@ -225,6 +277,9 @@ export class AgentService implements OnModuleInit {
         sql_result: null,
         sql_error: null,
         chart_config: null,
+        after_guidance: input.afterGuidance ?? false,
+        guidance: input.guidance ?? null,
+        schema_doc: '',
       },
       {
         version: 'v2' as const,
@@ -269,6 +324,12 @@ export class AgentService implements OnModuleInit {
         if (event.name === 'fallback') {
           fallback = true;
         }
+        if (event.name === 'guidanceExit') {
+          guidance_triggered = true;
+        }
+        if (event.name === 'intentFailExit') {
+          intent_fail = true;
+        }
       }
 
       if (event.event === 'on_chat_model_stream' && nodeName === 'analyst') {
@@ -286,6 +347,8 @@ export class AgentService implements OnModuleInit {
       chart_config,
       analyst_text,
       fallback,
+      guidance_triggered,
+      intent_fail,
       sql_attempts,
       latencies_ms: latencies,
       total_latency_ms: Date.now() - startedAt,
@@ -322,6 +385,9 @@ export class AgentService implements OnModuleInit {
       data_source_id: input.dataSourceId,
       session_id: input.sessionId,
       analyst_text: '',
+      after_guidance: false,
+      guidance: null,
+      schema_doc: '',
     };
 
     yield { type: 'status', step: 'executing_sql', message: '正在沙盒中执行 SQL...' };

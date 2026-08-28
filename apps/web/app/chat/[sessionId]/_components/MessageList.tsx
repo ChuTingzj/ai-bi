@@ -1,6 +1,6 @@
 'use client';
 
-import type { MessageDto } from '@ai-bi/shared';
+import type { GuidancePayload, MessageDto } from '@ai-bi/shared';
 import { MessageBubble } from './MessageBubble';
 
 interface StreamingView {
@@ -9,6 +9,10 @@ interface StreamingView {
   chart: Record<string, unknown> | null;
   sql: string | null;
   error: string | null;
+  guidance?: {
+    originalQuestion: string;
+    tables: import('@ai-bi/shared').SchemaTableMeta[];
+  } | null;
 }
 
 export function MessageList({
@@ -16,13 +20,17 @@ export function MessageList({
   sessionId,
   streaming,
   emptyHint,
+  guidanceDisabled,
   onAddToDashboard,
+  onGuidanceSubmit,
 }: {
   messages: MessageDto[];
   sessionId: string;
   streaming: StreamingView | null;
   emptyHint?: string;
+  guidanceDisabled?: boolean;
   onAddToDashboard: (config: Record<string, unknown>) => void;
+  onGuidanceSubmit?: (message: string, guidance: GuidancePayload) => void;
 }) {
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
@@ -42,6 +50,8 @@ export function MessageList({
           message={m}
           sessionId={sessionId}
           onAddToDashboard={onAddToDashboard}
+          guidanceDisabled={guidanceDisabled}
+          onGuidanceSubmit={onGuidanceSubmit}
         />
       ))}
 
@@ -58,7 +68,10 @@ export function MessageList({
               onAddToDashboard={onAddToDashboard}
             />
           )}
-          {(streaming.content || streaming.chart || streaming.error) && (
+          {(streaming.content ||
+            streaming.chart ||
+            streaming.error ||
+            streaming.guidance) && (
             <MessageBubble
               message={{
                 id: 'pending-assistant',
@@ -66,10 +79,20 @@ export function MessageList({
                 content: streaming.error ?? streaming.content,
                 chartConfig: streaming.chart,
                 sqlQuery: streaming.sql,
+                intent: streaming.guidance
+                  ? {
+                      kind: 'guidance',
+                      originalQuestion: streaming.guidance.originalQuestion,
+                      tables: streaming.guidance.tables,
+                      completed: false,
+                    }
+                  : null,
                 createdAt: new Date().toISOString(),
               }}
               onAddToDashboard={onAddToDashboard}
               isError={!!streaming.error}
+              guidanceDisabled={guidanceDisabled}
+              onGuidanceSubmit={onGuidanceSubmit}
             />
           )}
         </>
