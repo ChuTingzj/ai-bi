@@ -7,6 +7,16 @@ import {
 import { Client as PgClient } from 'pg';
 import * as mysql from 'mysql2/promise';
 import type { DataSource } from '@ai-bi/db';
+import {
+  buildCheckEnumMap,
+  buildDdl,
+  buildNativeEnumMap,
+  columnEnumKey,
+  mergeEnumMaps,
+  parseMysqlEnumType,
+  type EnumValueMap,
+  type SchemaColumnRow,
+} from '@ai-bi/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../common/crypto.service';
 import { CreateDataSourceDto, UpdateDataSourceDto } from './datasource.dto';
@@ -196,15 +206,76 @@ export class DataSourceService {
     });
     await client.connect();
 
-    const { rows } = await client.query(`
-      SELECT table_name, column_name, data_type, is_nullable
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-      ORDER BY table_name, ordinal_position
-    `);
-    await client.end();
+    try {
+      const { rows } = await client.query<{
+        table_name: string;
+        column_name: string;
+        data_type: string;
+        is_nullable: string;
+        udt_name: string;
+      }>(`
+        SELECT table_name, column_name, data_type, is_nullable, udt_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        ORDER BY table_name, ordinal_position
+      `);
 
-    return { schemaDoc: this.buildDdl(rows), tableCount: new Set(rows.map((r: { table_name: string }) => r.table_name)).size };
+      const typedRows: SchemaColumnRow[] = rows.map((r) => ({
+        table_name: r.table_name,
+        column_name: r.column_name,
+        data_type: r.data_type,
+        is_nullable: r.is_nullable,
+      }));
+
+      const nativeEnums = await this.fetchPostgresNativeEnums(client, rows);
+      const checkEnums = await this.fetchPostgresCheckEnums(client);
+      const enumMap = mergeEnumMaps(nativeEnums, checkEnums);
+
+      return {
+        schemaDoc: buildDdl(typedRows, enumMap),
+        tableCount: new Set(typedRows.map((r) => r.table_name)).size,
+      };
+    } finally {
+      await client.end();
+    }
+  }
+
+  private async fetchPostgresNativeEnums(
+    client: PgClient,
+    columns: Array<{
+      table_name: string;
+      column_name: string;
+      udt_name: string;
+    }>,
+  ): Promise<EnumValueMap> {
+    const { rows: enumRows } = await client.query<{
+      typname: string;
+      enumlabel: string;
+    }>(`
+      SELECT t.typname, e.enumlabel
+      FROM pg_type t
+      JOIN pg_enum e ON t.oid = e.enumtypid
+      ORDER BY t.typname, e.enumsortorder
+    `);
+    return buildNativeEnumMap(columns, enumRows);
+  }
+
+  private async fetchPostgresCheckEnums(
+    client: PgClient,
+  ): Promise<EnumValueMap> {
+    const { rows } = await client.query<{
+      table_name: string;
+      check_def: string;
+    }>(`
+      SELECT
+        c.conrelid::regclass::text AS table_name,
+        pg_get_constraintdef(c.oid) AS check_def
+      FROM pg_constraint c
+      JOIN pg_namespace n ON n.oid = c.connamespace
+      WHERE c.contype = 'c'
+        AND n.nspname = 'public'
+    `);
+    return buildCheckEnumMap(rows);
   }
 
   private async extractMysqlSchema(ds: DataSource, password: string) {
@@ -217,48 +288,46 @@ export class DataSourceService {
       connectTimeout: 5000,
     });
 
-    const [rows] = await conn.query(
-      `SELECT TABLE_NAME as table_name, COLUMN_NAME as column_name,
-              DATA_TYPE as data_type, IS_NULLABLE as is_nullable
-       FROM INFORMATION_SCHEMA.COLUMNS
-       WHERE TABLE_SCHEMA = ?
-       ORDER BY TABLE_NAME, ORDINAL_POSITION`,
-      [ds.database],
-    );
-    await conn.end();
+    try {
+      const [rows] = await conn.query(
+        `SELECT TABLE_NAME as table_name, COLUMN_NAME as column_name,
+                DATA_TYPE as data_type, IS_NULLABLE as is_nullable,
+                COLUMN_TYPE as column_type
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = ?
+         ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+        [ds.database],
+      );
 
-    const typedRows = rows as Array<{
-      table_name: string;
-      column_name: string;
-      data_type: string;
-      is_nullable: string;
-    }>;
-    return {
-      schemaDoc: this.buildDdl(typedRows),
-      tableCount: new Set(typedRows.map((r) => r.table_name)).size,
-    };
-  }
+      const typedRows = rows as Array<{
+        table_name: string;
+        column_name: string;
+        data_type: string;
+        is_nullable: string;
+        column_type: string;
+      }>;
 
-  private buildDdl(
-    rows: Array<{
-      table_name: string;
-      column_name: string;
-      data_type: string;
-      is_nullable: string;
-    }>,
-  ): string {
-    const tables = new Map<string, string[]>();
-    for (const row of rows) {
-      if (!tables.has(row.table_name)) tables.set(row.table_name, []);
-      tables
-        .get(row.table_name)!
-        .push(
-          `  ${row.column_name} ${row.data_type}${row.is_nullable === 'NO' ? ' NOT NULL' : ''}`,
-        );
+      const enumMap: EnumValueMap = new Map();
+      for (const row of typedRows) {
+        if (row.data_type.toLowerCase() !== 'enum') continue;
+        const values = parseMysqlEnumType(row.column_type);
+        if (values.length === 0) continue;
+        enumMap.set(columnEnumKey(row.table_name, row.column_name), values);
+      }
+
+      const columnRows: SchemaColumnRow[] = typedRows.map((r) => ({
+        table_name: r.table_name,
+        column_name: r.column_name,
+        data_type: r.data_type,
+        is_nullable: r.is_nullable,
+      }));
+
+      return {
+        schemaDoc: buildDdl(columnRows, enumMap),
+        tableCount: new Set(columnRows.map((r) => r.table_name)).size,
+      };
+    } finally {
+      await conn.end();
     }
-
-    return Array.from(tables.entries())
-      .map(([name, cols]) => `CREATE TABLE ${name} (\n${cols.join(',\n')}\n);`)
-      .join('\n\n');
   }
 }

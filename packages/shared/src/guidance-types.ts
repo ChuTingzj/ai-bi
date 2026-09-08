@@ -13,6 +13,8 @@ export type GuidanceFilterOperator =
 export interface SchemaColumnMeta {
   name: string;
   type?: string;
+  /** Legal values when schemaDoc includes `-- enum: a | b` on the column. */
+  enumValues?: string[];
 }
 
 export interface SchemaTableMeta {

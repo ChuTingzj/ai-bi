@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@ai-bi/db": "workspace:*",
+    "@ai-bi/shared": "workspace:*",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.0",

@@ -8,6 +8,13 @@ import { resolve } from 'path';
 import * as bcrypt from 'bcryptjs';
 import { Client as PgClient } from 'pg';
 import { PrismaClient } from '@ai-bi/db';
+import {
+  buildCheckEnumMap,
+  buildDdl,
+  buildNativeEnumMap,
+  mergeEnumMaps,
+  type SchemaColumnRow,
+} from '@ai-bi/shared';
 
 // Load .env from project root
 const envPath = resolve(__dirname, '../../.env');
@@ -48,28 +55,6 @@ function encrypt(plaintext: string): string {
   return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
 }
 
-function buildDdl(
-  rows: Array<{
-    table_name: string;
-    column_name: string;
-    data_type: string;
-    is_nullable: string;
-  }>,
-): string {
-  const tables = new Map<string, string[]>();
-  for (const row of rows) {
-    if (!tables.has(row.table_name)) tables.set(row.table_name, []);
-    tables
-      .get(row.table_name)!
-      .push(
-        `  ${row.column_name} ${row.data_type}${row.is_nullable === 'NO' ? ' NOT NULL' : ''}`,
-      );
-  }
-  return Array.from(tables.entries())
-    .map(([name, cols]) => `CREATE TABLE ${name} (\n${cols.join(',\n')}\n);`)
-    .join('\n\n');
-}
-
 async function extractSchema(): Promise<string> {
   const client = new PgClient({
     host: BENCHMARK_DB_HOST,
@@ -79,14 +64,59 @@ async function extractSchema(): Promise<string> {
     database: 'benchmark_bi',
   });
   await client.connect();
-  const { rows } = await client.query(`
-    SELECT table_name, column_name, data_type, is_nullable
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-    ORDER BY table_name, ordinal_position
-  `);
-  await client.end();
-  return buildDdl(rows);
+  try {
+    const { rows } = await client.query<{
+      table_name: string;
+      column_name: string;
+      data_type: string;
+      is_nullable: string;
+      udt_name: string;
+    }>(`
+      SELECT table_name, column_name, data_type, is_nullable, udt_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+      ORDER BY table_name, ordinal_position
+    `);
+
+    const typedRows: SchemaColumnRow[] = rows.map((r) => ({
+      table_name: r.table_name,
+      column_name: r.column_name,
+      data_type: r.data_type,
+      is_nullable: r.is_nullable,
+    }));
+
+    const { rows: enumRows } = await client.query<{
+      typname: string;
+      enumlabel: string;
+    }>(`
+      SELECT t.typname, e.enumlabel
+      FROM pg_type t
+      JOIN pg_enum e ON t.oid = e.enumtypid
+      ORDER BY t.typname, e.enumsortorder
+    `);
+
+    const { rows: checkRows } = await client.query<{
+      table_name: string;
+      check_def: string;
+    }>(`
+      SELECT
+        c.conrelid::regclass::text AS table_name,
+        pg_get_constraintdef(c.oid) AS check_def
+      FROM pg_constraint c
+      JOIN pg_namespace n ON n.oid = c.connamespace
+      WHERE c.contype = 'c'
+        AND n.nspname = 'public'
+    `);
+
+    const enumMap = mergeEnumMaps(
+      buildNativeEnumMap(rows, enumRows),
+      buildCheckEnumMap(checkRows),
+    );
+
+    return buildDdl(typedRows, enumMap);
+  } finally {
+    await client.end();
+  }
 }
 
 async function main() {

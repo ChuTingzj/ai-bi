@@ -11,6 +11,9 @@ importers:
       '@ai-bi/db':
         specifier: workspace:*
         version: link:packages/db
+      '@ai-bi/shared':
+        specifier: workspace:*
+        version: link:packages/shared
       '@types/bcryptjs':
         specifier: ^2.4.6
         version: 2.4.6

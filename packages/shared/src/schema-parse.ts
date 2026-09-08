@@ -42,13 +42,25 @@ function parseColumns(ddl: string): SchemaColumnMeta[] {
     }
     const colMatch = line.match(/^["'`]?(\w+)["'`]?\s+([\w()]+)?/i);
     if (!colMatch) continue;
+    const enumValues = parseEnumComment(line);
     columns.push({
       name: colMatch[1],
       type: colMatch[2]?.replace(/\([^)]*\)/, '') || undefined,
+      ...(enumValues.length > 0 ? { enumValues } : {}),
     });
   }
 
   return columns;
+}
+
+/** Extract values from a trailing `-- enum: a | b | c` comment. */
+function parseEnumComment(line: string): string[] {
+  const m = line.match(/--\s*enum:\s*(.+)$/i);
+  if (!m) return [];
+  return m[1]
+    .split('|')
+    .map((v) => v.trim())
+    .filter(Boolean);
 }
 
 /** Split column definitions on commas that are not inside parentheses. */
