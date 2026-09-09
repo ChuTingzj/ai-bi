@@ -1,4 +1,4 @@
-import { Agent } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { type NextRequest } from 'next/server';
 
 /** Disable undici idle body timeout — SSE can be quiet for minutes between events. */
@@ -16,18 +16,18 @@ export async function proxySsePost(
   const abort = new AbortController();
   req.signal.addEventListener('abort', () => abort.abort());
 
-  const upstream = await fetch(`${apiBase}${upstreamPath}`, {
+  // Must use undici's fetch with undici's Agent — Node/Next global fetch is an older
+  // undici and rejects the v8 dispatcher ("invalid onRequestStart method").
+  const upstream = await undiciFetch(`${apiBase}${upstreamPath}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: req.headers.get('authorization') ?? '',
     },
     body: await req.text(),
-    cache: 'no-store',
     signal: abort.signal,
-    // Node/undici extension used by the SSE proxy (not in DOM fetch typings).
     dispatcher: sseUpstreamAgent,
-  } as RequestInit & { dispatcher: Agent });
+  });
 
   if (!upstream.body) {
     return new Response(await upstream.text(), {
@@ -38,7 +38,8 @@ export async function proxySsePost(
     });
   }
 
-  return new Response(upstream.body, {
+  // undici's stream type is structurally compatible at runtime with Web BodyInit.
+  return new Response(upstream.body as unknown as BodyInit, {
     status: upstream.status,
     headers: {
       'Content-Type': 'text/event-stream; charset=utf-8',
