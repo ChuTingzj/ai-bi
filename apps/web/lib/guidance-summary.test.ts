@@ -5,6 +5,7 @@ import {
   buildGuidanceMessage,
   columnsForTables,
   operatorNeedsValue,
+  qualifyField,
 } from '../app/chat/[sessionId]/_components/guidance/guidance-summary';
 
 const tables: SchemaTableMeta[] = [
@@ -21,19 +22,34 @@ const tables: SchemaTableMeta[] = [
   },
 ];
 
+describe('qualifyField', () => {
+  it('joins table and column with a dot', () => {
+    assert.equal(qualifyField('orders', 'gmv'), 'orders.gmv');
+  });
+});
+
 describe('buildGuidanceMessage', () => {
-  it('joins selected tables, fields, and filters into the resubmit sentence', () => {
+  it('includes association clause and joins for multi-table payloads', () => {
     const payload: GuidancePayload = {
       tables: ['orders', 'users'],
-      fields: ['gmv', 'email'],
+      fields: ['orders.gmv', 'users.email'],
       filters: [
-        { field: 'status', operator: '=', value: 'paid' },
-        { field: 'coupon', operator: 'IS NULL' },
+        { field: 'orders.status', operator: '=', value: 'paid' },
+        { field: 'orders.coupon', operator: 'IS NULL' },
+      ],
+      joins: [
+        {
+          leftTable: 'orders',
+          leftColumns: ['user_id'],
+          rightTable: 'users',
+          rightColumns: ['id'],
+          type: 'INNER',
+        },
       ],
     };
     assert.equal(
       buildGuidanceMessage('近30天销量', payload),
-      '基于表 orders, users，字段 gmv, email，条件 status = paid AND coupon IS NULL，原问题：近30天销量',
+      '基于表 orders（关联 users），关联 orders.user_id=users.id，字段 orders.gmv, users.email，条件 orders.status = paid AND orders.coupon IS NULL，原问题：近30天销量',
     );
   });
 
@@ -42,10 +58,24 @@ describe('buildGuidanceMessage', () => {
       tables: ['orders'],
       fields: [],
       filters: [],
+      joins: [],
     };
     assert.equal(
       buildGuidanceMessage('看一下订单', payload),
       '基于表 orders，字段 （未指定），条件 无，原问题：看一下订单',
+    );
+  });
+
+  it('keeps single-table shape when joins are empty', () => {
+    const payload: GuidancePayload = {
+      tables: ['orders'],
+      fields: ['orders.gmv'],
+      filters: [],
+      joins: [],
+    };
+    assert.equal(
+      buildGuidanceMessage('看 GMV', payload),
+      '基于表 orders，字段 orders.gmv，条件 无，原问题：看 GMV',
     );
   });
 });

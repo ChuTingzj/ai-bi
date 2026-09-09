@@ -1,8 +1,22 @@
 import type {
   GuidanceFilter,
+  GuidanceJoin,
   GuidancePayload,
   SchemaTableMeta,
 } from '@ai-bi/shared';
+
+export function qualifyField(table: string, column: string): string {
+  return `${table}.${column}`;
+}
+
+function formatJoinEquals(join: GuidanceJoin): string {
+  return join.leftColumns
+    .map((col, i) => {
+      const right = join.rightColumns[i] ?? '';
+      return `${join.leftTable}.${col}=${join.rightTable}.${right}`;
+    })
+    .join(' AND ');
+}
 
 export function buildGuidanceMessage(
   originalQuestion: string,
@@ -20,12 +34,25 @@ export function buildGuidanceMessage(
           })
           .join(' AND ');
 
-  return [
-    `基于表 ${payload.tables.join(', ')}`,
+  const joins = payload.joins ?? [];
+  const primary = payload.tables[0] ?? '';
+  const related = payload.tables.slice(1);
+  const multi = related.length > 0 || joins.length > 0;
+
+  const tablePart = multi
+    ? `基于表 ${primary}（关联 ${related.join(', ')}）`
+    : `基于表 ${payload.tables.join(', ')}`;
+
+  const parts = [tablePart];
+  if (joins.length > 0) {
+    parts.push(`关联 ${joins.map(formatJoinEquals).join(' AND ')}`);
+  }
+  parts.push(
     `字段 ${payload.fields.join(', ') || '（未指定）'}`,
     `条件 ${filterText}`,
     `原问题：${originalQuestion}`,
-  ].join('，');
+  );
+  return parts.join('，');
 }
 
 export function columnsForTables(
