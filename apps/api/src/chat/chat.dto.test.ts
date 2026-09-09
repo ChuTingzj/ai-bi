@@ -58,4 +58,47 @@ describe('ChatStreamDto', () => {
     });
     assert.deepEqual(await validate(dto), []);
   });
+
+  it('accepts guidance joins with INNER type', async () => {
+    const dto = plainToInstance(ChatStreamDto, {
+      ...valid,
+      guidance: {
+        tables: ['orders', 'users'],
+        fields: ['orders.gmv'],
+        filters: [],
+        joins: [
+          {
+            leftTable: 'orders',
+            leftColumns: ['user_id'],
+            rightTable: 'users',
+            rightColumns: ['id'],
+            type: 'INNER',
+          },
+        ],
+      },
+    });
+    assert.deepEqual(await validate(dto), []);
+  });
+
+  it('rejects guidance joins with non-INNER type', async () => {
+    const dto = plainToInstance(ChatStreamDto, {
+      ...valid,
+      guidance: {
+        tables: ['orders', 'users'],
+        fields: ['orders.gmv'],
+        filters: [],
+        joins: [
+          {
+            leftTable: 'orders',
+            leftColumns: ['user_id'],
+            rightTable: 'users',
+            rightColumns: ['id'],
+            type: 'LEFT',
+          },
+        ],
+      },
+    });
+    const errors = await validate(dto);
+    assert.ok(errors.some((e) => e.property === 'guidance'));
+  });
 });

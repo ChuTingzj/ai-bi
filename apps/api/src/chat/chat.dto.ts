@@ -36,6 +36,27 @@ export class GuidanceFilterDto {
   value?: string;
 }
 
+export class GuidanceJoinDto {
+  @IsString()
+  @IsNotEmpty()
+  leftTable!: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  leftColumns!: string[];
+
+  @IsString()
+  @IsNotEmpty()
+  rightTable!: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  rightColumns!: string[];
+
+  @IsIn(['INNER'])
+  type!: 'INNER';
+}
+
 export class GuidancePayloadDto {
   @IsArray()
   @IsString({ each: true })
@@ -49,6 +70,12 @@ export class GuidancePayloadDto {
   @ValidateNested({ each: true })
   @Type(() => GuidanceFilterDto)
   filters!: GuidanceFilterDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GuidanceJoinDto)
+  joins?: GuidanceJoinDto[];
 }
 
 export class ChatStreamDto {

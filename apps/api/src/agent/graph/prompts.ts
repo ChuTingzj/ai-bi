@@ -13,8 +13,9 @@ export const PLANNER_SYSTEM_PROMPT = `你是一个数据分析规划专家。根
 
 规则：
 1. relevant_tables 只能使用「可用表摘要」中真实存在的表名
-2. 若用户提供了引导约束（选定的表/字段/过滤），relevant_tables 必须优先且包含这些表，不得返回空数组（除非选定表确实不在摘要中）
-3. 将引导中的字段、过滤条件融入 metrics / dimensions / filters`;
+2. 若用户提供了引导约束（选定的表/字段/过滤），relevant_tables 必须优先且包含这些表（guidance.tables 全部），不得返回空数组（除非选定表确实不在摘要中）
+3. 将引导中的字段、过滤条件融入 metrics / dimensions / filters
+4. 若引导包含 JOIN，意图中的表集合必须覆盖 JOIN 两侧的表`;
 
 export const SQL_SYSTEM_PROMPT = `你是一个 SQL 生成专家。根据查询意图和表结构生成 {dialect} 查询语句。
 
@@ -25,6 +26,7 @@ export const SQL_SYSTEM_PROMPT = `你是一个 SQL 生成专家。根据查询�
 4. 如果列注释包含 \`enum: a | b | c\`，过滤/等值条件必须使用列出的字面量，禁止翻译或臆造取值
 5. 如果提供了上一次的错误信息，请根据错误修正 SQL
 6. 单条语句，不要以分号结尾
+7. 若用户引导约束中列出了 JOIN，必须使用对应的 INNER JOIN 与关联键，禁止改写关联键；优先使用引导中的限定字段（table.column）
 
 表结构：
 {table_schema}`;

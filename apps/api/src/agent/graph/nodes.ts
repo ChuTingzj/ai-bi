@@ -1,7 +1,6 @@
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import {
   filterValidTables,
-  type GuidancePayload,
   type QueryIntent,
 } from '@ai-bi/shared';
 import type { PrismaService } from '../../prisma/prisma.service';
@@ -9,6 +8,7 @@ import type { SandboxService } from '../../sandbox/sandbox.service';
 import type { LlmService } from '../llm.service';
 import { withLlmRetry } from '../llm-retry';
 import type { BiAgentState } from './state';
+import { formatGuidanceBlock } from './guidance-format';
 import {
   ANALYST_SYSTEM_PROMPT,
   CHART_SYSTEM_PROMPT,
@@ -37,21 +37,6 @@ function stripCodeFence(text: string): string {
     .replace(/^```[a-zA-Z]*\n?/m, '')
     .replace(/```\s*$/m, '')
     .trim();
-}
-
-function formatGuidanceBlock(guidance: GuidancePayload): string {
-  const filterLines = guidance.filters.map((f) => {
-    if (f.operator === 'IS NULL' || f.operator === 'IS NOT NULL') {
-      return `${f.field} ${f.operator}`;
-    }
-    return `${f.field} ${f.operator} ${f.value ?? ''}`;
-  });
-  return [
-    '用户引导约束（必须遵守）：',
-    `表：${guidance.tables.join(', ') || '（未选）'}`,
-    `字段：${guidance.fields.join(', ') || '（未选）'}`,
-    `过滤：${filterLines.join(' AND ') || '（无）'}`,
-  ].join('\n');
 }
 
 export interface NodeDeps {

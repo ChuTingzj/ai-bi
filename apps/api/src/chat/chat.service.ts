@@ -9,8 +9,10 @@ import { ChatStreamDto } from './chat.dto';
 import {
   DEFAULT_SESSION_TITLE,
   type GuidanceMessageIntent,
+  type GuidancePayload,
   type MessageIntent,
   type SseEvent,
+  validateGuidanceAgainstSchema,
 } from '@ai-bi/shared';
 import { GUIDANCE_INTRO_MESSAGE as API_GUIDANCE_INTRO } from '../agent/graph/prompts';
 import { formatUserFacingLlmError } from '../agent/llm-retry';
@@ -20,6 +22,18 @@ interface SseMessage {
 }
 
 const TITLE_EMIT_WAIT_MS = 8_000;
+
+function normalizeGuidance(
+  guidance: ChatStreamDto['guidance'],
+): GuidancePayload | undefined {
+  if (!guidance) return undefined;
+  return {
+    tables: guidance.tables,
+    fields: guidance.fields,
+    filters: guidance.filters,
+    joins: guidance.joins ?? [],
+  };
+}
 
 function waitWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return new Promise((resolve) => {
@@ -70,6 +84,21 @@ export class ChatService {
           throw new BadRequestException('会话未绑定数据源，请指定 dataSourceId');
         }
 
+        const guidance = normalizeGuidance(dto.guidance);
+        if (guidance) {
+          const dataSource = await this.prisma.dataSource.findUnique({
+            where: { id: dataSourceId },
+            select: { schemaDoc: true },
+          });
+          const validation = validateGuidanceAgainstSchema(
+            dataSource?.schemaDoc ?? '',
+            guidance,
+          );
+          if (!validation.ok) {
+            throw new BadRequestException(validation.error);
+          }
+        }
+
         await this.prisma.message.create({
           data: {
             sessionId: dto.sessionId,
@@ -80,7 +109,7 @@ export class ChatService {
 
         // Mark prior incomplete guidance messages as completed when user resubmits after wizard
         if (dto.afterGuidance) {
-          await this.markGuidanceCompleted(dto.sessionId, dto.guidance);
+          await this.markGuidanceCompleted(dto.sessionId, guidance);
         }
 
         let titleEmitted = false;
@@ -121,7 +150,7 @@ export class ChatService {
           userId: user.id,
           signal: abortController.signal,
           afterGuidance: dto.afterGuidance,
-          guidance: dto.guidance,
+          guidance,
         });
 
         for await (const event of generator) {
@@ -192,7 +221,7 @@ export class ChatService {
   /** Mark open guidance assistant messages in this session as completed. */
   private async markGuidanceCompleted(
     sessionId: string,
-    selection?: ChatStreamDto['guidance'],
+    selection?: GuidancePayload,
   ) {
     const recent = await this.prisma.message.findMany({
       where: { sessionId, role: 'ASSISTANT' },
