@@ -102,6 +102,90 @@ describe('buildDdl', () => {
     );
     assert.match(ddl, /id integer NOT NULL,/);
   });
+
+  it('appends single-column FOREIGN KEY constraints', () => {
+    const ddl = buildDdl(
+      [
+        {
+          table_name: 'orders',
+          column_name: 'id',
+          data_type: 'integer',
+          is_nullable: 'NO',
+        },
+        {
+          table_name: 'orders',
+          column_name: 'user_id',
+          data_type: 'integer',
+          is_nullable: 'YES',
+        },
+        {
+          table_name: 'users',
+          column_name: 'id',
+          data_type: 'integer',
+          is_nullable: 'NO',
+        },
+      ],
+      undefined,
+      [
+        {
+          constraint_name: 'fk_orders_user',
+          from_table: 'orders',
+          from_column: 'user_id',
+          to_table: 'users',
+          to_column: 'id',
+          ordinal_position: 1,
+        },
+      ],
+    );
+
+    assert.match(
+      ddl,
+      /CONSTRAINT fk_orders_user FOREIGN KEY \(user_id\) REFERENCES users \(id\)/,
+    );
+  });
+
+  it('groups composite FOREIGN KEY columns by ordinal_position', () => {
+    const ddl = buildDdl(
+      [
+        {
+          table_name: 'order_items',
+          column_name: 'order_id',
+          data_type: 'integer',
+          is_nullable: 'NO',
+        },
+        {
+          table_name: 'order_items',
+          column_name: 'line_no',
+          data_type: 'integer',
+          is_nullable: 'NO',
+        },
+      ],
+      undefined,
+      [
+        {
+          constraint_name: 'fk_items_order_line',
+          from_table: 'order_items',
+          from_column: 'line_no',
+          to_table: 'order_lines',
+          to_column: 'line_no',
+          ordinal_position: 2,
+        },
+        {
+          constraint_name: 'fk_items_order_line',
+          from_table: 'order_items',
+          from_column: 'order_id',
+          to_table: 'order_lines',
+          to_column: 'order_id',
+          ordinal_position: 1,
+        },
+      ],
+    );
+
+    assert.match(
+      ddl,
+      /CONSTRAINT fk_items_order_line FOREIGN KEY \(order_id, line_no\) REFERENCES order_lines \(order_id, line_no\)/,
+    );
+  });
 });
 
 describe('buildNativeEnumMap / buildCheckEnumMap / mergeEnumMaps', () => {

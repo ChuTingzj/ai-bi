@@ -8,6 +8,16 @@ export type SchemaColumnRow = {
   is_nullable: string;
 };
 
+/** One column of a FOREIGN KEY constraint (composite keys use multiple rows). */
+export type SchemaForeignKeyRow = {
+  constraint_name: string;
+  from_table: string;
+  from_column: string;
+  to_table: string;
+  to_column: string;
+  ordinal_position: number;
+};
+
 /** Key format: `table_name.column_name` (case-sensitive as returned by the DB). */
 export type EnumValueMap = Map<string, string[]>;
 
@@ -157,12 +167,75 @@ export function buildCheckEnumMap(
   return enumMap;
 }
 
+type FkConstraintGroup = {
+  constraint_name: string;
+  from_table: string;
+  to_table: string;
+  from_columns: string[];
+  to_columns: string[];
+};
+
+/** Group FK column rows by constraint; drop incomplete groups. */
+function groupForeignKeys(
+  foreignKeys: SchemaForeignKeyRow[],
+): FkConstraintGroup[] {
+  const byConstraint = new Map<string, SchemaForeignKeyRow[]>();
+  for (const row of foreignKeys) {
+    if (
+      !row.constraint_name ||
+      !row.from_table ||
+      !row.from_column ||
+      !row.to_table ||
+      !row.to_column
+    ) {
+      continue;
+    }
+    const key = `${row.from_table}::${row.constraint_name}`;
+    if (!byConstraint.has(key)) byConstraint.set(key, []);
+    byConstraint.get(key)!.push(row);
+  }
+
+  const groups: FkConstraintGroup[] = [];
+  for (const rows of byConstraint.values()) {
+    rows.sort((a, b) => a.ordinal_position - b.ordinal_position);
+    const first = rows[0];
+    if (
+      rows.some(
+        (r) =>
+          r.from_table !== first.from_table || r.to_table !== first.to_table,
+      )
+    ) {
+      continue;
+    }
+    const from_columns = rows.map((r) => r.from_column);
+    const to_columns = rows.map((r) => r.to_column);
+    if (
+      from_columns.length === 0 ||
+      from_columns.length !== to_columns.length ||
+      from_columns.some((c) => !c) ||
+      to_columns.some((c) => !c)
+    ) {
+      continue;
+    }
+    groups.push({
+      constraint_name: first.constraint_name,
+      from_table: first.from_table,
+      to_table: first.to_table,
+      from_columns,
+      to_columns,
+    });
+  }
+  return groups;
+}
+
 /**
- * Build schemaDoc DDL text from column rows, optionally appending enum comments.
+ * Build schemaDoc DDL text from column rows, optionally appending enum comments
+ * and FOREIGN KEY constraint lines.
  */
 export function buildDdl(
   rows: SchemaColumnRow[],
   enumMap?: EnumValueMap,
+  foreignKeys?: SchemaForeignKeyRow[],
 ): string {
   const tables = new Map<string, string[]>();
   for (const row of rows) {
@@ -176,6 +249,19 @@ export function buildDdl(
       .push(
         `  ${row.column_name} ${row.data_type}${row.is_nullable === 'NO' ? ' NOT NULL' : ''}${comment}`,
       );
+  }
+
+  if (foreignKeys?.length) {
+    for (const group of groupForeignKeys(foreignKeys)) {
+      if (!tables.has(group.from_table)) tables.set(group.from_table, []);
+      const fromList = group.from_columns.join(', ');
+      const toList = group.to_columns.join(', ');
+      tables
+        .get(group.from_table)!
+        .push(
+          `  CONSTRAINT ${group.constraint_name} FOREIGN KEY (${fromList}) REFERENCES ${group.to_table} (${toList})`,
+        );
+    }
   }
 
   return Array.from(tables.entries())
