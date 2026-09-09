@@ -16,10 +16,17 @@ import {
   parseMysqlEnumType,
   type EnumValueMap,
   type SchemaColumnRow,
+  type SchemaForeignKeyRow,
 } from '@ai-bi/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../common/crypto.service';
 import { CreateDataSourceDto, UpdateDataSourceDto } from './datasource.dto';
+import {
+  mapMysqlForeignKeyRows,
+  mapPgForeignKeyRows,
+  type MysqlForeignKeyQueryRow,
+  type PgForeignKeyQueryRow,
+} from './schema-fk';
 
 @Injectable()
 export class DataSourceService {
@@ -230,14 +237,46 @@ export class DataSourceService {
       const nativeEnums = await this.fetchPostgresNativeEnums(client, rows);
       const checkEnums = await this.fetchPostgresCheckEnums(client);
       const enumMap = mergeEnumMaps(nativeEnums, checkEnums);
+      const foreignKeys = await this.fetchPostgresForeignKeys(client);
 
       return {
-        schemaDoc: buildDdl(typedRows, enumMap),
+        schemaDoc: buildDdl(typedRows, enumMap, foreignKeys),
         tableCount: new Set(typedRows.map((r) => r.table_name)).size,
       };
     } finally {
       await client.end();
     }
+  }
+
+  private async fetchPostgresForeignKeys(
+    client: PgClient,
+  ): Promise<SchemaForeignKeyRow[]> {
+    const { rows } = await client.query<PgForeignKeyQueryRow>(`
+      SELECT
+        con.conname AS constraint_name,
+        rel_from.relname AS from_table,
+        att_from.attname AS from_column,
+        rel_to.relname AS to_table,
+        att_to.attname AS to_column,
+        ord.ordinal_position::int AS ordinal_position
+      FROM pg_constraint con
+      JOIN pg_class rel_from ON rel_from.oid = con.conrelid
+      JOIN pg_namespace nsp
+        ON nsp.oid = rel_from.relnamespace AND nsp.nspname = 'public'
+      JOIN pg_class rel_to ON rel_to.oid = con.confrelid
+      JOIN LATERAL unnest(con.conkey, con.confkey)
+        WITH ORDINALITY AS ord(from_attnum, to_attnum, ordinal_position)
+        ON true
+      JOIN pg_attribute att_from
+        ON att_from.attrelid = con.conrelid
+        AND att_from.attnum = ord.from_attnum
+      JOIN pg_attribute att_to
+        ON att_to.attrelid = con.confrelid
+        AND att_to.attnum = ord.to_attnum
+      WHERE con.contype = 'f'
+      ORDER BY con.conname, ord.ordinal_position
+    `);
+    return mapPgForeignKeyRows(rows);
   }
 
   private async fetchPostgresNativeEnums(
@@ -322,12 +361,30 @@ export class DataSourceService {
         is_nullable: r.is_nullable,
       }));
 
+      const foreignKeys = await this.fetchMysqlForeignKeys(conn, ds.database);
+
       return {
-        schemaDoc: buildDdl(columnRows, enumMap),
+        schemaDoc: buildDdl(columnRows, enumMap, foreignKeys),
         tableCount: new Set(columnRows.map((r) => r.table_name)).size,
       };
     } finally {
       await conn.end();
     }
+  }
+
+  private async fetchMysqlForeignKeys(
+    conn: mysql.Connection,
+    database: string,
+  ): Promise<SchemaForeignKeyRow[]> {
+    const [rows] = await conn.query(
+      `SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME,
+              REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, ORDINAL_POSITION
+       FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+       WHERE TABLE_SCHEMA = ?
+         AND REFERENCED_TABLE_NAME IS NOT NULL
+       ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION`,
+      [database],
+    );
+    return mapMysqlForeignKeyRows(rows as MysqlForeignKeyQueryRow[]);
   }
 }
