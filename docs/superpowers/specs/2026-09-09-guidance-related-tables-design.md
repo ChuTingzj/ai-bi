@@ -1,7 +1,7 @@
 # Guidance Related-Table Queries — Design Spec
 
 **Date:** 2026-09-09  
-**Status:** Approved (pending final user review of this file)  
+**Status:** Approved  
 **Product:** DataMind AI-BI (`apps/web` guidance wizard + `apps/api` schema sync / agent)  
 **Approach:** Scheme 1 — embed FKs in `schemaDoc`, Shared parse, auto INNER JOIN from direct FK neighbors
 

@@ -25,7 +25,8 @@ export default function DataSourcesPage() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">数据源管理</h1>
             <p className="text-sm text-muted-foreground">
-              接入只读数据库账号，同步表结构后即可开始对话查询
+              接入只读数据库账号，同步表结构后即可开始对话查询。关联表引导需重新同步
+              Schema 以加载外键。
             </p>
           </div>
           <button
