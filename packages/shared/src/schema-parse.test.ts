@@ -45,7 +45,7 @@ CREATE TABLE users (
     assert.deepEqual(tables[0].columns, [{ name: 'id', type: 'int' }]);
   });
 
-  it('skips constraint-only lines', () => {
+  it('skips constraint-only lines but parses FOREIGN KEY relations', () => {
     const tables = parseSchemaDoc(`
 CREATE TABLE orders (
   id integer NOT NULL,
@@ -62,6 +62,34 @@ CREATE TABLE orders (
       tables[0].columns.map((c) => c.name),
       ['id', 'user_id'],
     );
+    assert.deepEqual(tables[0].outgoingRelations, [
+      {
+        name: 'fk_user',
+        fromTable: 'orders',
+        fromColumns: ['user_id'],
+        toTable: 'users',
+        toColumns: ['id'],
+      },
+    ]);
+  });
+
+  it('parses composite FOREIGN KEY constraints', () => {
+    const tables = parseSchemaDoc(`
+CREATE TABLE order_items (
+  order_id integer,
+  line_no integer,
+  CONSTRAINT fk_items_order_line FOREIGN KEY (order_id, line_no) REFERENCES order_lines (order_id, line_no)
+);
+`);
+    assert.deepEqual(tables[0].outgoingRelations, [
+      {
+        name: 'fk_items_order_line',
+        fromTable: 'order_items',
+        fromColumns: ['order_id', 'line_no'],
+        toTable: 'order_lines',
+        toColumns: ['order_id', 'line_no'],
+      },
+    ]);
   });
 
   it('strips parenthesized length from varchar(255)', () => {
