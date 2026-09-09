@@ -9,6 +9,7 @@ import type { LlmService } from '../llm.service';
 import { withLlmRetry } from '../llm-retry';
 import type { BiAgentState } from './state';
 import { formatGuidanceBlock } from './guidance-format';
+import { questionLacksAnalyticSignal } from './planner-guard';
 import {
   ANALYST_SYSTEM_PROMPT,
   CHART_SYSTEM_PROMPT,
@@ -88,6 +89,13 @@ export function createNodes(deps: NodeDeps) {
         ...new Set([...state.guidance.tables, ...relevant_tables]),
       ];
       intent.relevant_tables = relevant_tables;
+    } else if (
+      !state.after_guidance &&
+      questionLacksAnalyticSignal(state.question)
+    ) {
+      // Nonsense / digit-only questions must enter guidance, not guess a table
+      relevant_tables = [];
+      intent.relevant_tables = [];
     }
 
     const validTables = filterValidTables(schemaDoc, relevant_tables);

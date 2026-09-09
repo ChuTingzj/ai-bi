@@ -15,7 +15,8 @@ export const PLANNER_SYSTEM_PROMPT = `你是一个数据分析规划专家。根
 1. relevant_tables 只能使用「可用表摘要」中真实存在的表名
 2. 若用户提供了引导约束（选定的表/字段/过滤），relevant_tables 必须优先且包含这些表（guidance.tables 全部），不得返回空数组（除非选定表确实不在摘要中）
 3. 将引导中的字段、过滤条件融入 metrics / dimensions / filters
-4. 若引导包含 JOIN，意图中的表集合必须覆盖 JOIN 两侧的表`;
+4. 若引导包含 JOIN，意图中的表集合必须覆盖 JOIN 两侧的表
+5. 若问题含糊、无业务含义（如纯数字/乱码）、或无法从问题推断应查哪张表，relevant_tables 必须返回空数组 []，禁止猜测默认表（例如不要因为摘要里有 orders 就默认选它）`;
 
 export const SQL_SYSTEM_PROMPT = `你是一个 SQL 生成专家。根据查询意图和表结构生成 {dialect} 查询语句。
 
