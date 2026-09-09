@@ -13,6 +13,7 @@ import {
   type SseEvent,
 } from '@ai-bi/shared';
 import { GUIDANCE_INTRO_MESSAGE as API_GUIDANCE_INTRO } from '../agent/graph/prompts';
+import { formatUserFacingLlmError } from '../agent/llm-retry';
 
 interface SseMessage {
   data: string;
@@ -175,7 +176,7 @@ export class ChatService {
         emit({
           type: 'error',
           code: '500',
-          message: err.message ?? '服务器内部错误',
+          message: formatUserFacingLlmError(err),
         });
         emit('[DONE]');
         if (!subscriber.closed) subscriber.complete();

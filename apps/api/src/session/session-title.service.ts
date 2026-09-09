@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../agent/llm.service';
 import { TITLE_SYSTEM_PROMPT } from '../agent/graph/prompts';
+import { withLlmRetry } from '../agent/llm-retry';
 
 const TITLE_LLM_TIMEOUT_MS = 8_000;
 const DEFAULT_TITLE_LLM_MODEL = '~deepseek/deepseek-v4-flash-latest';
@@ -63,15 +64,17 @@ export class SessionTitleService {
   }
 
   private async generateTitle(question: string): Promise<string> {
-    const model = this.llm.create({
-      model: process.env.LLM_TITLE_MODEL ?? DEFAULT_TITLE_LLM_MODEL,
-      timeout: TITLE_LLM_TIMEOUT_MS,
-      maxTokens: 32,
+    const response = await withLlmRetry(async () => {
+      const model = this.llm.create({
+        model: process.env.LLM_TITLE_MODEL ?? DEFAULT_TITLE_LLM_MODEL,
+        timeout: TITLE_LLM_TIMEOUT_MS,
+        maxTokens: 32,
+      });
+      return model.invoke([
+        new SystemMessage(TITLE_SYSTEM_PROMPT),
+        new HumanMessage(question.slice(0, 500)),
+      ]);
     });
-    const response = await model.invoke([
-      new SystemMessage(TITLE_SYSTEM_PROMPT),
-      new HumanMessage(question.slice(0, 500)),
-    ]);
     return sanitizeTitle(String(response.content ?? ''), question);
   }
 }

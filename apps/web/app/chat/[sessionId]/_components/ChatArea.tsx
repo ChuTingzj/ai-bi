@@ -64,6 +64,7 @@ type Action =
       tables: SchemaTableMeta[];
     }
   | { type: 'ERROR'; message: string }
+  | { type: 'CLEAR_STREAM' }
   | { type: 'RESET' };
 
 function reducer(state: ChatStreamState, action: Action): ChatStreamState {
@@ -89,10 +90,24 @@ function reducer(state: ChatStreamState, action: Action): ChatStreamState {
       };
     case 'ERROR':
       return { ...state, error: action.message, isStreaming: false };
+    case 'CLEAR_STREAM':
+      return {
+        ...state,
+        isStreaming: false,
+        currentStep: null,
+        stepMessage: '',
+        streamingContent: '',
+        streamingChart: null,
+        streamingSql: null,
+        pendingQuestion: null,
+        liveGuidance: null,
+      };
     case 'RESET':
       return initialState;
-    default:
-      return state;
+    default: {
+      const _exhaustive: never = action;
+      return _exhaustive;
+    }
   }
 }
 
@@ -174,6 +189,7 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
       patchSessionTitle(heuristicTitle(message));
     }
 
+    let keepError = false;
     try {
       for await (const event of streamChat(
         {
@@ -219,16 +235,26 @@ export function ChatArea({ sessionId }: { sessionId: string }) {
             break;
           case 'done':
             break;
+          default: {
+            const _exhaustive: never = event;
+            void _exhaustive;
+            break;
+          }
         }
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
-        dispatch({ type: 'ERROR', message: (err as Error).message });
+        keepError = true;
+        const raw = (err as Error).message || '请求失败';
+        const message = /timeout|BODY_TIMEOUT|terminated|failed to pipe/i.test(raw)
+          ? '对话超时或连接中断，请重试'
+          : raw;
+        dispatch({ type: 'ERROR', message });
       }
     } finally {
       await queryClient.invalidateQueries({ queryKey: ['messages', sessionId] });
-      // Keep live guidance only until messages refetch; then RESET clears it
-      dispatch({ type: 'RESET' });
+      // Transport failures leave no assistant row — keep the error banner.
+      dispatch({ type: keepError ? 'CLEAR_STREAM' : 'RESET' });
     }
   }
 

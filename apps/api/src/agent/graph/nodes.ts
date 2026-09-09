@@ -7,6 +7,7 @@ import {
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { SandboxService } from '../../sandbox/sandbox.service';
 import type { LlmService } from '../llm.service';
+import { withLlmRetry } from '../llm-retry';
 import type { BiAgentState } from './state';
 import {
   ANALYST_SYSTEM_PROMPT,
@@ -14,6 +15,22 @@ import {
   PLANNER_SYSTEM_PROMPT,
   SQL_SYSTEM_PROMPT,
 } from './prompts';
+
+function messageContentToText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && 'text' in part) {
+          return String((part as { text?: unknown }).text ?? '');
+        }
+        return '';
+      })
+      .join('');
+  }
+  return String(content ?? '');
+}
 
 function stripCodeFence(text: string): string {
   return text
@@ -67,13 +84,17 @@ export function createNodes(deps: NodeDeps) {
       userParts.push(formatGuidanceBlock(state.guidance));
     }
 
-    const model = llm.create({ jsonMode: true });
-    const response = await model.invoke([
-      new SystemMessage(PLANNER_SYSTEM_PROMPT),
-      new HumanMessage(userParts.join('\n\n')),
-    ]);
+    const response = await withLlmRetry(async () => {
+      const model = llm.create({ jsonMode: true });
+      return model.invoke([
+        new SystemMessage(PLANNER_SYSTEM_PROMPT),
+        new HumanMessage(userParts.join('\n\n')),
+      ]);
+    });
 
-    const intent = JSON.parse(stripCodeFence(String(response.content))) as QueryIntent;
+    const intent = JSON.parse(
+      stripCodeFence(messageContentToText(response.content)),
+    ) as QueryIntent;
     let relevant_tables = intent.relevant_tables ?? [];
 
     // Prefer user-selected tables when guidance is present
@@ -133,13 +154,17 @@ export function createNodes(deps: NodeDeps) {
       userParts.push(`上一次执行错误：${state.sql_error}`);
     }
 
-    const model = llm.create();
-    const response = await model.invoke([
-      new SystemMessage(systemPrompt),
-      new HumanMessage(userParts.join('\n\n')),
-    ]);
+    const response = await withLlmRetry(async () => {
+      const model = llm.create();
+      return model.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage(userParts.join('\n\n')),
+      ]);
+    });
 
-    return { generated_sql: stripCodeFence(String(response.content)) };
+    return {
+      generated_sql: stripCodeFence(messageContentToText(response.content)),
+    };
   }
 
   async function sqlExecutorNode(state: BiAgentState) {
@@ -172,19 +197,23 @@ export function createNodes(deps: NodeDeps) {
     );
     const rows = state.sql_result?.rows.slice(0, 100) ?? [];
 
-    const model = llm.create({ jsonMode: true });
-    const response = await model.invoke([
-      new SystemMessage(systemPrompt),
-      new HumanMessage(
-        [
-          `查询意图：${JSON.stringify(state.intent)}`,
-          `查询结果列：${JSON.stringify(state.sql_result?.columns ?? [])}`,
-          `查询结果数据（前 100 行）：${JSON.stringify(rows)}`,
-        ].join('\n'),
-      ),
-    ]);
+    const response = await withLlmRetry(async () => {
+      const model = llm.create({ jsonMode: true });
+      return model.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage(
+          [
+            `查询意图：${JSON.stringify(state.intent)}`,
+            `查询结果列：${JSON.stringify(state.sql_result?.columns ?? [])}`,
+            `查询结果数据（前 100 行）：${JSON.stringify(rows)}`,
+          ].join('\n'),
+        ),
+      ]);
+    });
 
-    const chartConfig = JSON.parse(stripCodeFence(String(response.content)));
+    const chartConfig = JSON.parse(
+      stripCodeFence(messageContentToText(response.content)),
+    );
     return { chart_config: chartConfig };
   }
 
@@ -203,7 +232,11 @@ export function createNodes(deps: NodeDeps) {
     return {};
   }
 
-  /** Analyst Agent：图内调用 LLM，streamEvents 会转发 on_chat_model_stream */
+  /**
+   * Analyst Agent：非流式调用，避免 OpenRouter mid-stream SSE 注入错误
+   * （"JSON error injected into SSE stream"）直接打断整条聊天。
+   * 完整文本由 AgentService 在节点结束时以 token 事件下发。
+   */
   async function analystNode(state: BiAgentState) {
     const resultSummary = JSON.stringify({
       columns: state.sql_result?.columns,
@@ -211,31 +244,17 @@ export function createNodes(deps: NodeDeps) {
       sampleRows: state.sql_result?.rows.slice(0, 50),
     });
 
-    const model = llm.create({ streaming: true });
-    const response = await model.invoke([
-      new SystemMessage(ANALYST_SYSTEM_PROMPT),
-      new HumanMessage(
-        `用户问题：${state.question}\n查询结果摘要：${resultSummary}`,
-      ),
-    ]);
+    const response = await withLlmRetry(async () => {
+      const model = llm.create({ streaming: false });
+      return model.invoke([
+        new SystemMessage(ANALYST_SYSTEM_PROMPT),
+        new HumanMessage(
+          `用户问题：${state.question}\n查询结果摘要：${resultSummary}`,
+        ),
+      ]);
+    });
 
-    const content = response.content;
-    const analystText =
-      typeof content === 'string'
-        ? content
-        : Array.isArray(content)
-          ? content
-              .map((part) =>
-                typeof part === 'string'
-                  ? part
-                  : part && typeof part === 'object' && 'text' in part
-                    ? String((part as { text?: unknown }).text ?? '')
-                    : '',
-              )
-              .join('')
-          : String(content ?? '');
-
-    return { analyst_text: analystText };
+    return { analyst_text: messageContentToText(response.content) };
   }
 
   return {

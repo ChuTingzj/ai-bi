@@ -21,6 +21,7 @@ import {
 } from './graph/prompts';
 import { createNodes } from './graph/nodes';
 import type { BiAgentState, BenchmarkRunResult } from './graph/state';
+import { withLlmRetry } from './llm-retry';
 
 export interface WorkflowInput {
   sessionId: string;
@@ -139,9 +140,6 @@ export class AgentService implements OnModuleInit {
     let lastQuestion = input.question;
 
     for await (const event of stream) {
-      const nodeName = (event.metadata?.langgraph_node ?? event.name) as string;
-
-      // 节点开始：推送进度状态。用 event.name 避免嵌套 LLM runnable 重复触发
       if (event.event === 'on_chain_start' && NODE_NAMES.has(event.name)) {
         switch (event.name) {
           case 'planner':
@@ -203,6 +201,10 @@ export class AgentService implements OnModuleInit {
           yield { type: 'chart', config: output.chart_config };
         }
 
+        if (event.name === 'analyst' && output.analyst_text) {
+          yield { type: 'token', content: output.analyst_text };
+        }
+
         if (event.name === 'fallback') {
           const detail = lastSqlError ? `\n\n最后一次错误：${lastSqlError}` : '';
           yield { type: 'error', code: '1003', message: FALLBACK_MESSAGE + detail };
@@ -233,17 +235,6 @@ export class AgentService implements OnModuleInit {
             code: '1005',
             message: GUIDANCE_FAIL_MESSAGE,
           };
-        }
-      }
-
-      // Analyst 节点内 LLM 流式 token
-      if (
-        event.event === 'on_chat_model_stream' &&
-        nodeName === 'analyst'
-      ) {
-        const content = chunkText(event.data?.chunk);
-        if (content) {
-          yield { type: 'token', content };
         }
       }
     }
@@ -289,8 +280,6 @@ export class AgentService implements OnModuleInit {
     );
 
     for await (const event of stream) {
-      const nodeName = (event.metadata?.langgraph_node ?? event.name) as string;
-
       if (event.event === 'on_chain_start' && NODE_NAMES.has(event.name)) {
         nodeStarts.set(event.name, Date.now());
       }
@@ -321,6 +310,9 @@ export class AgentService implements OnModuleInit {
         if (event.name === 'chartGenerator' && output.chart_config) {
           chart_config = output.chart_config;
         }
+        if (event.name === 'analyst' && output.analyst_text) {
+          analyst_text = output.analyst_text;
+        }
         if (event.name === 'fallback') {
           fallback = true;
         }
@@ -330,10 +322,6 @@ export class AgentService implements OnModuleInit {
         if (event.name === 'intentFailExit') {
           intent_fail = true;
         }
-      }
-
-      if (event.event === 'on_chat_model_stream' && nodeName === 'analyst') {
-        analyst_text += chunkText(event.data?.chunk);
       }
     }
 
@@ -447,20 +435,21 @@ export class AgentService implements OnModuleInit {
         rowCount: sqlResult.rowCount,
         sampleRows: sqlResult.rows.slice(0, 50),
       });
-      const model = this.llm.create({ streaming: true });
-      const stream = await model.stream([
-        new SystemMessage(ANALYST_SYSTEM_PROMPT),
-        new HumanMessage(
-          `用户问题：${input.question}\n查询结果摘要：${resultSummary}`,
-        ),
-      ]);
-      for await (const chunk of stream) {
-        if (input.signal?.aborted) break;
-        const content = chunkText(chunk);
-        if (content) {
-          analystText += content;
-          yield { type: 'token', content };
-        }
+      const response = await withLlmRetry(
+        async () => {
+          const model = this.llm.create({ streaming: false });
+          return model.invoke([
+            new SystemMessage(ANALYST_SYSTEM_PROMPT),
+            new HumanMessage(
+              `用户问题：${input.question}\n查询结果摘要：${resultSummary}`,
+            ),
+          ]);
+        },
+        { signal: input.signal },
+      );
+      analystText = chunkText(response);
+      if (analystText) {
+        yield { type: 'token', content: analystText };
       }
     } catch (err) {
       analystError = (err as Error).message ?? '洞察生成失败';
