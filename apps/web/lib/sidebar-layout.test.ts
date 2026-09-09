@@ -6,6 +6,7 @@ import {
   asideWidthPx,
   isEditableKeyboardTarget,
   parseSidebarPrefs,
+  toggleSidebarWidth,
   toggleWidthPreset,
 } from './sidebar-layout';
 
@@ -63,6 +64,13 @@ describe('toggleWidthPreset', () => {
   it('flips narrow ↔ default', () => {
     assert.equal(toggleWidthPreset('narrow'), 'default');
     assert.equal(toggleWidthPreset('default'), 'narrow');
+  });
+});
+
+describe('toggleSidebarWidth', () => {
+  it('is a no-op while collapsed', () => {
+    const prefs = { collapsed: true, width: 'narrow' } as const;
+    assert.equal(toggleSidebarWidth(prefs), prefs);
   });
 });
 

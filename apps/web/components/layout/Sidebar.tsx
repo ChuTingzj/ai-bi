@@ -17,10 +17,16 @@ import { clearTokens } from '@/lib/auth';
 type SidebarProps = {
   collapsed: boolean;
   widthPx: number;
+  hydrated: boolean;
   onToggleCollapsed: () => void;
 };
 
-export function Sidebar({ collapsed, widthPx, onToggleCollapsed }: SidebarProps) {
+export function Sidebar({
+  collapsed,
+  widthPx,
+  hydrated,
+  onToggleCollapsed,
+}: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: sessions } = useSessions();
@@ -69,7 +75,11 @@ export function Sidebar({ collapsed, widthPx, onToggleCollapsed }: SidebarProps)
     <aside
       id="app-sidebar"
       style={{ width: widthPx }}
-      className="flex h-screen shrink-0 flex-col overflow-hidden border-r border-border bg-card transition-[width] duration-200 ease-out motion-reduce:transition-none"
+      className={`flex h-screen shrink-0 flex-col overflow-hidden border-r border-border bg-card ${
+        hydrated
+          ? 'transition-[width] duration-200 ease-out motion-reduce:transition-none'
+          : ''
+      }`}
       aria-label="主导航"
     >
       <div

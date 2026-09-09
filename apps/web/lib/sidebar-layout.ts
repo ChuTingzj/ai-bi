@@ -45,6 +45,11 @@ export function toggleWidthPreset(width: SidebarWidthPreset): SidebarWidthPreset
   return width === 'narrow' ? 'default' : 'narrow';
 }
 
+export function toggleSidebarWidth(prefs: SidebarPrefs): SidebarPrefs {
+  if (prefs.collapsed) return prefs;
+  return { ...prefs, width: toggleWidthPreset(prefs.width) };
+}
+
 export function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   if (target == null) return false;
   if (!(target instanceof Element)) return false;
