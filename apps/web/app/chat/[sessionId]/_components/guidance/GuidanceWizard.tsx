@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import type {
-  GuidanceFilter,
-  GuidanceMessageIntent,
-  GuidancePayload,
+import { useMemo, useState } from 'react';
+import {
+  buildJoins,
+  type GuidanceFilter,
+  type GuidanceMessageIntent,
+  type GuidancePayload,
 } from '@ai-bi/shared';
 import { TableStep } from './TableStep';
 import { FieldStep } from './FieldStep';
@@ -19,6 +20,15 @@ const STEPS = [
 
 type StepId = (typeof STEPS)[number]['id'];
 
+function initialPrimary(intent: GuidanceMessageIntent): string | null {
+  return intent.selection?.tables[0] ?? null;
+}
+
+function initialRelated(intent: GuidanceMessageIntent): string[] {
+  const tables = intent.selection?.tables ?? [];
+  return tables.slice(1);
+}
+
 export function GuidanceWizard({
   intent,
   disabled,
@@ -29,18 +39,24 @@ export function GuidanceWizard({
   onSubmit: (message: string, guidance: GuidancePayload) => void;
 }) {
   const [step, setStep] = useState<StepId>('table');
-  const [table, setTable] = useState<string | null>(
-    intent.selection?.tables[0] ?? null,
+  const [primary, setPrimary] = useState<string | null>(() =>
+    initialPrimary(intent),
   );
+  const [related, setRelated] = useState<string[]>(() => initialRelated(intent));
   const [fields, setFields] = useState<string[]>(intent.selection?.fields ?? []);
   const [filters, setFilters] = useState<GuidanceFilter[]>(
     intent.selection?.filters ?? [],
   );
 
+  const selectedTables = useMemo(
+    () => (primary ? [primary, ...related] : []),
+    [primary, related],
+  );
+
   const stepIndex = STEPS.findIndex((s) => s.id === step);
 
   function goNext() {
-    if (step === 'table' && table) setStep('fields');
+    if (step === 'table' && primary) setStep('fields');
     else if (step === 'fields') setStep('filters');
   }
 
@@ -49,18 +65,27 @@ export function GuidanceWizard({
     else if (step === 'filters') setStep('fields');
   }
 
+  function handleSelectPrimary(name: string) {
+    setPrimary(name);
+    setRelated([]);
+    setFields([]);
+    setFilters([]);
+  }
+
   function handleSubmit() {
-    if (!table || disabled) return;
+    if (!primary || disabled) return;
+    const joins = buildJoins(primary, related, intent.tables);
     const payload: GuidancePayload = {
-      tables: [table],
+      tables: [primary, ...related],
       fields,
       filters: filters.filter((f) => f.field),
+      joins,
     };
     onSubmit(buildGuidanceMessage(intent.originalQuestion, payload), payload);
   }
 
   const canNext =
-    (step === 'table' && !!table) || step === 'fields' || step === 'filters';
+    (step === 'table' && !!primary) || step === 'fields' || step === 'filters';
 
   return (
     <div className="mt-3 space-y-4">
@@ -113,36 +138,35 @@ export function GuidanceWizard({
             </h3>
             <TableStep
               tables={intent.tables}
-              selected={table}
-              onSelect={(name) => {
-                setTable(name);
-                setFields([]);
-                setFilters([]);
-              }}
+              selected={primary}
+              related={related}
+              onSelectPrimary={handleSelectPrimary}
+              onChangeRelated={setRelated}
             />
           </>
         )}
-        {step === 'fields' && table && (
+        {step === 'fields' && primary && (
           <>
             <h3 className="mb-2 text-sm font-medium text-foreground">
               选择需要的字段（可多选）
             </h3>
             <FieldStep
               tables={intent.tables}
-              selectedTable={table}
+              selectedTables={selectedTables}
+              primaryTable={primary}
               selectedFields={fields}
               onChange={setFields}
             />
           </>
         )}
-        {step === 'filters' && table && (
+        {step === 'filters' && primary && (
           <>
             <h3 className="mb-2 text-sm font-medium text-foreground">
               添加过滤条件（可选）
             </h3>
             <FilterStep
               tables={intent.tables}
-              selectedTable={table}
+              selectedTables={selectedTables}
               selectedFields={fields}
               filters={filters}
               onChange={setFilters}
@@ -166,7 +190,7 @@ export function GuidanceWizard({
           <button
             type="button"
             onClick={goNext}
-            disabled={!canNext || disabled || (step === 'table' && !table)}
+            disabled={!canNext || disabled || (step === 'table' && !primary)}
             className="min-h-11 cursor-pointer rounded-lg bg-primary px-4 text-sm font-medium text-on-primary transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             下一步
@@ -175,7 +199,7 @@ export function GuidanceWizard({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!table || disabled}
+            disabled={!primary || disabled}
             className="min-h-11 cursor-pointer rounded-lg bg-primary px-4 text-sm font-medium text-on-primary transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             开始查询
@@ -194,6 +218,8 @@ export function GuidanceSummaryReadonly({
   const selection = intent.selection;
   if (!selection) return null;
 
+  const joins = selection.joins ?? [];
+
   return (
     <div className="mt-3 space-y-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
       <p className="text-xs font-medium text-muted-foreground">已补充的查询范围</p>
@@ -204,6 +230,14 @@ export function GuidanceSummaryReadonly({
             className="rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
           >
             表 {t}
+          </span>
+        ))}
+        {joins.map((j, i) => (
+          <span
+            key={`${j.leftTable}-${j.rightTable}-${i}`}
+            className="rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
+          >
+            {j.leftTable} → {j.rightTable}
           </span>
         ))}
         {selection.fields.map((f) => (

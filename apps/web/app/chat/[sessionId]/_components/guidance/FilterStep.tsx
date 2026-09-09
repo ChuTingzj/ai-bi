@@ -1,11 +1,13 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Plus, Trash } from '@phosphor-icons/react';
 import type { GuidanceFilter, SchemaTableMeta } from '@ai-bi/shared';
 import {
   FILTER_OPERATORS,
   columnsForTables,
   operatorNeedsValue,
+  qualifyField,
 } from './guidance-summary';
 
 function emptyFilter(defaultField = ''): GuidanceFilter {
@@ -14,22 +16,46 @@ function emptyFilter(defaultField = ''): GuidanceFilter {
 
 export function FilterStep({
   tables,
-  selectedTable,
+  selectedTables,
   selectedFields,
   filters,
   onChange,
 }: {
   tables: SchemaTableMeta[];
-  selectedTable: string;
+  selectedTables: string[];
   selectedFields: string[];
   filters: GuidanceFilter[];
   onChange: (filters: GuidanceFilter[]) => void;
 }) {
-  const columns = columnsForTables(tables, [selectedTable]);
-  const fieldOptions =
-    selectedFields.length > 0
-      ? selectedFields
-      : columns.map((c) => c.name);
+  const columns = useMemo(
+    () => columnsForTables(tables, selectedTables),
+    [tables, selectedTables],
+  );
+
+  const fieldGroups = useMemo(() => {
+    if (selectedFields.length > 0) {
+      const byTable = new Map<string, string[]>();
+      for (const field of selectedFields) {
+        const dot = field.indexOf('.');
+        const table = dot >= 0 ? field.slice(0, dot) : selectedTables[0] ?? '';
+        const col = dot >= 0 ? field.slice(dot + 1) : field;
+        const qualified = qualifyField(table, col);
+        if (!byTable.has(table)) byTable.set(table, []);
+        byTable.get(table)!.push(qualified);
+      }
+      return [...byTable.entries()];
+    }
+
+    const byTable = new Map<string, string[]>();
+    for (const col of columns) {
+      const qualified = qualifyField(col.table, col.name);
+      if (!byTable.has(col.table)) byTable.set(col.table, []);
+      byTable.get(col.table)!.push(qualified);
+    }
+    return [...byTable.entries()];
+  }, [columns, selectedFields, selectedTables]);
+
+  const allOptions = fieldGroups.flatMap(([, opts]) => opts);
 
   function update(index: number, patch: Partial<GuidanceFilter>) {
     onChange(
@@ -42,7 +68,7 @@ export function FilterStep({
   }
 
   function add() {
-    onChange([...filters, emptyFilter(fieldOptions[0] ?? '')]);
+    onChange([...filters, emptyFilter(allOptions[0] ?? '')]);
   }
 
   return (
@@ -66,11 +92,15 @@ export function FilterStep({
                 onChange={(e) => update(index, { field: e.target.value })}
                 className="min-h-11 w-full rounded-md border border-border bg-background px-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {fieldOptions.length === 0 && <option value="">（无字段）</option>}
-                {fieldOptions.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
+                {allOptions.length === 0 && <option value="">（无字段）</option>}
+                {fieldGroups.map(([tableName, opts]) => (
+                  <optgroup key={tableName} label={tableName}>
+                    {opts.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
@@ -128,7 +158,7 @@ export function FilterStep({
       <button
         type="button"
         onClick={add}
-        disabled={fieldOptions.length === 0}
+        disabled={allOptions.length === 0}
         className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-sm text-primary transition-colors duration-150 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Plus size={16} aria-hidden="true" />
