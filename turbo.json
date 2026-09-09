@@ -10,6 +10,9 @@
       "persistent": true
     },
     "lint": {},
+    "test": {
+      "dependsOn": ["^build"]
+    },
     "generate": {
       "cache": false
     }

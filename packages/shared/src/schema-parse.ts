@@ -40,7 +40,7 @@ function parseColumns(ddl: string): SchemaColumnMeta[] {
     ) {
       continue;
     }
-    const colMatch = line.match(/^["'`]?(\w+)["'`]?\s+([\w()]+)?/i);
+    const colMatch = line.match(/^["'`]?(\w+)["'`]?\s+(\w+(?:\([^)]*\))?)?/i);
     if (!colMatch) continue;
     const enumValues = parseEnumComment(line);
     columns.push({
