@@ -3,13 +3,16 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import type { DataSource } from '@ai-bi/db';
+import type { QueryResult } from '@ai-bi/shared';
 import { CryptoService } from '../common/crypto.service';
+import { createNodes } from '../agent/graph/nodes';
+import type { BiAgentState } from '../agent/graph/state';
 import type {
   ExecuteSqlFn,
   ExecuteSqlInput,
   ExecuteSqlResult,
 } from './ffp-client';
-import { applyHostRowLimit } from './host-row-limit';
+import { applyHostRowLimit, RESULT_ROW_LIMIT } from './host-row-limit';
 import {
   DENIED_HOST_ERROR,
   isDeniedHost,
@@ -253,6 +256,40 @@ describe('7. duplicate columns disambiguated as col__2', () => {
   });
 });
 
+function executorState(): BiAgentState {
+  return {
+    question: '',
+    intent: null,
+    relevant_tables: [],
+    table_schema: '',
+    generated_sql: 'SELECT 1',
+    sql_result: null,
+    sql_error: null,
+    chart_config: null,
+    error_count: 0,
+    data_source_id: 'ds-1',
+    session_id: '',
+    analyst_text: '',
+    after_guidance: false,
+    guidance: null,
+    schema_doc: '',
+  };
+}
+
+function graphNodesWithSandboxData(data: QueryResult) {
+  return createNodes({
+    prisma: {
+      dataSource: {
+        findUnique: async () => ({ id: 'ds-1', host: 'db.internal' }),
+      },
+    } as never,
+    sandbox: {
+      execute: async () => ({ success: true, data }),
+    } as never,
+    llm: {} as never,
+  });
+}
+
 describe('8. host re-slice sets truncated: true', () => {
   it('keeps truncated when ffp already truncated under the host limit', () => {
     const applied = applyHostRowLimit({
@@ -281,5 +318,46 @@ describe('8. host re-slice sets truncated: true', () => {
     assert.equal(applied.ffpTruncated, true);
     assert.equal(applied.result.truncated, true);
     assert.equal(applied.result.rows.length, 2);
+  });
+
+  it('sqlExecutorNode wires applyHostRowLimit: host re-slice sets truncated on sql_result', async () => {
+    const rows = Array.from({ length: RESULT_ROW_LIMIT + 1 }, (_, i) => ({
+      n: i,
+    }));
+    const nodes = graphNodesWithSandboxData({
+      columns: ['n'],
+      rows,
+      rowCount: RESULT_ROW_LIMIT + 1,
+      truncated: false,
+    });
+    const out = await nodes.sqlExecutorNode(executorState());
+    assert.equal(out.sql_error, null);
+    assert.equal(out.sql_result?.truncated, true);
+    assert.equal(out.sql_result?.rows.length, RESULT_ROW_LIMIT);
+    assert.equal(out.sql_result?.rowCount, RESULT_ROW_LIMIT + 1);
+  });
+
+  it('sqlExecutorNode keeps truncated when ffp truncated and the host also slices', async () => {
+    const rows = Array.from({ length: RESULT_ROW_LIMIT + 5 }, (_, i) => ({
+      n: i,
+    }));
+    const nodes = graphNodesWithSandboxData({
+      columns: ['n'],
+      rows,
+      rowCount: RESULT_ROW_LIMIT + 5,
+      truncated: true,
+    });
+    const out = await nodes.sqlExecutorNode(executorState());
+    assert.equal(out.sql_result?.truncated, true);
+    assert.equal(out.sql_result?.rows.length, RESULT_ROW_LIMIT);
+  });
+
+  it('sqlExecutorNode source actually calls applyHostRowLimit', () => {
+    const src = readFileSync(
+      path.join(SRC_ROOT, 'agent/graph/nodes.ts'),
+      'utf8',
+    );
+    assert.match(src, /applyHostRowLimit/);
+    assert.match(src, /sql_result:\s*applied\.result/);
   });
 });
