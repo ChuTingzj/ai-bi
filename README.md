@@ -41,8 +41,8 @@ docker compose up -d postgres
 # 4. 数据库迁移 + 生成 Client
 pnpm db:migrate
 
-# 5. 预拉 SQL 沙盒 runner（digest 由 ffp-sql-sandbox@0.1.3 固定）
-docker pull ghcr.io/ffp-tech-lab/ffp-sql-sandbox-runner:v1
+# 5. 预拉 SQL 沙盒 runner（digest 由 ffp-sql-sandbox@0.1.4 固定）
+docker pull ghcr.io/ffp-tech-lab/ffp-sql-sandbox-runner@sha256:d8347adb65417b00d6395a77a2e3a53a2fc15b231ca47dd8646b77416563112c
 
 # 6. 启动前后端（watch 模式）
 pnpm dev
@@ -54,7 +54,7 @@ pnpm dev
 ## 生产部署
 
 ```bash
-docker pull ghcr.io/ffp-tech-lab/ffp-sql-sandbox-runner:v1
+docker pull ghcr.io/ffp-tech-lab/ffp-sql-sandbox-runner@sha256:d8347adb65417b00d6395a77a2e3a53a2fc15b231ca47dd8646b77416563112c
 docker compose up -d postgres api web
 pnpm db:deploy
 ```
