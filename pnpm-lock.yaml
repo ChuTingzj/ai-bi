@@ -95,6 +95,9 @@ importers:
       dockerode:
         specifier: ^4.0.12
         version: 4.0.12
+      ffp-sql-sandbox:
+        specifier: 0.1.2
+        version: 0.1.2
       helmet:
         specifier: ^8.3.0
         version: 8.3.0
@@ -1817,6 +1820,10 @@ packages:
 
   fflate@0.8.3:
     resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
+
+  ffp-sql-sandbox@0.1.2:
+    resolution: {integrity: sha512-aPuIMgiSXRfI6s6ysQzO7nqD21eWnUj1b8cxrqN+F/NXVcE1Cy6bG/sJEsYCMJy8F6Qqm966D300QrAge1KyLw==}
+    engines: {node: '>=20'}
 
   figures@3.2.0:
     resolution: {integrity: sha512-yaduQFRKLXYOGgEn6AZau90j3ggSOyiqXU0F9JZfeXYhNa+Jk4X+s45A2zg5jns87GAFa34BBm2kXw4XpNcbdg==}
@@ -5040,6 +5047,12 @@ snapshots:
       picomatch: 4.0.7
 
   fflate@0.8.3: {}
+
+  ffp-sql-sandbox@0.1.2:
+    dependencies:
+      dockerode: 4.0.12
+    transitivePeerDependencies:
+      - supports-color
 
   figures@3.2.0:
     dependencies:

@@ -10,6 +10,7 @@ import type {
 import { parseSchemaDoc } from '@ai-bi/shared';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { PrismaService } from '../prisma/prisma.service';
+import { applyHostRowLimit } from '../sandbox/host-row-limit';
 import { SandboxService } from '../sandbox/sandbox.service';
 import { LlmService } from './llm.service';
 import { buildBiAgentGraph } from './graph/bi-agent.graph';
@@ -51,8 +52,6 @@ export interface LabRerunResult {
   analystText: string;
   analystError: string | null;
 }
-
-const RESULT_ROW_LIMIT = 1000;
 
 function chunkText(chunk: unknown): string {
   if (!chunk || typeof chunk !== 'object') return '';
@@ -389,15 +388,15 @@ export class AgentService implements OnModuleInit {
       return { ...empty, sqlError };
     }
 
-    const truncated =
-      exec.sql_result.rows.length > RESULT_ROW_LIMIT ||
-      exec.sql_result.rowCount > RESULT_ROW_LIMIT;
-    const sqlResult: QueryResult = {
-      columns: exec.sql_result.columns,
-      rows: exec.sql_result.rows.slice(0, RESULT_ROW_LIMIT),
-      rowCount: exec.sql_result.rowCount,
-      truncated,
-    };
+    const applied = applyHostRowLimit(exec.sql_result);
+    if (applied.ffpTruncated) {
+      this.logger.log('ffp_truncated');
+    }
+    if (applied.hostDidSlice) {
+      this.logger.log('host_row_limit');
+    }
+    const sqlResult = applied.result;
+    const truncated = Boolean(sqlResult.truncated);
 
     yield { type: 'sql', query: input.sql, status: 'success' };
     yield { type: 'result', data: sqlResult };
