@@ -9,7 +9,7 @@
 - **前端**：Next.js 15 (App Router) + React Query + Zustand + ECharts
 - **后端**：NestJS 10 + SSE + Prisma
 - **AI 编排**：LangGraph.js（Planner / SQL / Review / Analyst / Chart 五 Agent）
-- **基础设施**：PostgreSQL 16 + Docker 沙盒（dockerode）
+- **基础设施**：PostgreSQL 16 + Docker 沙盒（`ffp-sql-sandbox` digest 镜像）
 
 ## 目录结构
 
@@ -41,8 +41,8 @@ docker compose up -d postgres
 # 4. 数据库迁移 + 生成 Client
 pnpm db:migrate
 
-# 5. 构建沙盒镜像
-docker build -t ai-bi-sandbox:latest ./sandbox
+# 5. 预拉 SQL 沙盒 runner（digest 由 ffp-sql-sandbox@0.1.4 固定）
+docker pull ghcr.io/ffp-tech-lab/ffp-sql-sandbox-runner@sha256:d8347adb65417b00d6395a77a2e3a53a2fc15b231ca47dd8646b77416563112c
 
 # 6. 启动前后端（watch 模式）
 pnpm dev
@@ -54,7 +54,9 @@ pnpm dev
 ## 生产部署
 
 ```bash
-docker compose --profile build-only build sandbox
+docker pull ghcr.io/ffp-tech-lab/ffp-sql-sandbox-runner@sha256:d8347adb65417b00d6395a77a2e3a53a2fc15b231ca47dd8646b77416563112c
 docker compose up -d postgres api web
 pnpm db:deploy
 ```
+
+沙盒接入约定见 [`apps/api/src/sandbox/ADR.md`](./apps/api/src/sandbox/ADR.md)（allowlist A、最小 host denylist、只读 R1）。

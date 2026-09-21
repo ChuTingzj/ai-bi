@@ -13,7 +13,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SessionService } from '../session/session.service';
 import { DataSourceService } from '../datasource/datasource.service';
 import { UserPayload } from '../common/current-user.decorator';
-import { validateSql } from '../sandbox/sql-validator';
+import { mapSandboxError } from '../sandbox/error-map';
+import { validateSql } from '../sandbox/ffp-client';
 import { LabRunDto } from './lab.dto';
 
 interface SseMessage {
@@ -53,12 +54,12 @@ export class LabService {
         }
         await this.dataSourceService.findOne(user.id, dataSourceId);
 
-        const validation = validateSql(dto.sql);
-        if (!validation.valid) {
+        const validation = await validateSql(dto.sql);
+        if (!validation.ok) {
           emit({
             type: 'error',
             code: '1001',
-            message: validation.reason ?? 'SQL 未通过校验',
+            message: mapSandboxError(validation.code, validation.reason),
           });
           emit({ type: 'done', messageId: dto.messageId ?? '' });
           emit('[DONE]');

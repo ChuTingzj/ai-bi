@@ -52,8 +52,6 @@ export interface LabRerunResult {
   analystError: string | null;
 }
 
-const RESULT_ROW_LIMIT = 1000;
-
 function chunkText(chunk: unknown): string {
   if (!chunk || typeof chunk !== 'object') return '';
   const content = (chunk as { content?: unknown }).content;
@@ -389,15 +387,8 @@ export class AgentService implements OnModuleInit {
       return { ...empty, sqlError };
     }
 
-    const truncated =
-      exec.sql_result.rows.length > RESULT_ROW_LIMIT ||
-      exec.sql_result.rowCount > RESULT_ROW_LIMIT;
-    const sqlResult: QueryResult = {
-      columns: exec.sql_result.columns,
-      rows: exec.sql_result.rows.slice(0, RESULT_ROW_LIMIT),
-      rowCount: exec.sql_result.rowCount,
-      truncated,
-    };
+    const sqlResult = exec.sql_result;
+    const truncated = Boolean(sqlResult.truncated);
 
     yield { type: 'sql', query: input.sql, status: 'success' };
     yield { type: 'result', data: sqlResult };

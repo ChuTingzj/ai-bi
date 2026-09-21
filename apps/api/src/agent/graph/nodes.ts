@@ -1,9 +1,11 @@
+import { Logger } from '@nestjs/common';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import {
   filterValidTables,
   type QueryIntent,
 } from '@ai-bi/shared';
 import type { PrismaService } from '../../prisma/prisma.service';
+import { applyHostRowLimit } from '../../sandbox/host-row-limit';
 import type { SandboxService } from '../../sandbox/sandbox.service';
 import type { LlmService } from '../llm.service';
 import { withLlmRetry } from '../llm-retry';
@@ -45,6 +47,8 @@ export interface NodeDeps {
   sandbox: SandboxService;
   llm: LlmService;
 }
+
+const sqlExecutorLogger = new Logger('SqlExecutor');
 
 export function createNodes(deps: NodeDeps) {
   const { sandbox, llm } = deps;
@@ -174,7 +178,14 @@ export function createNodes(deps: NodeDeps) {
 
     const result = await sandbox.execute(state.generated_sql, dataSource);
     if (result.success && result.data) {
-      return { sql_result: result.data, sql_error: null };
+      const applied = applyHostRowLimit(result.data);
+      if (applied.ffpTruncated) {
+        sqlExecutorLogger.log('ffp_truncated');
+      }
+      if (applied.hostDidSlice) {
+        sqlExecutorLogger.log('host_row_limit');
+      }
+      return { sql_result: applied.result, sql_error: null };
     }
     return {
       sql_result: null,
