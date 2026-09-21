@@ -92,7 +92,7 @@ function capturingExecutor(
   return { fn, calls };
 }
 
-describe('1. package pin ffp-sql-sandbox@0.1.2', () => {
+describe('1. package pin ffp-sql-sandbox@0.1.3', () => {
   it('is an exact production dependency', () => {
     const pkg = JSON.parse(
       readFileSync(path.join(API_ROOT, 'package.json'), 'utf8'),
@@ -100,16 +100,16 @@ describe('1. package pin ffp-sql-sandbox@0.1.2', () => {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
-    assert.equal(pkg.dependencies?.['ffp-sql-sandbox'], '0.1.2');
+    assert.equal(pkg.dependencies?.['ffp-sql-sandbox'], '0.1.3');
     assert.equal(pkg.devDependencies?.['ffp-sql-sandbox'], undefined);
   });
 
-  it('is locked at 0.1.2 in pnpm-lock.yaml', () => {
+  it('is locked at 0.1.3 in pnpm-lock.yaml', () => {
     const lockfile = readFileSync(
       path.join(API_ROOT, '../../pnpm-lock.yaml'),
       'utf8',
     );
-    assert.match(lockfile, /ffp-sql-sandbox@0\.1\.2:/);
+    assert.match(lockfile, /ffp-sql-sandbox@0\.1\.3:/);
   });
 });
 
