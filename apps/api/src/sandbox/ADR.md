@@ -38,3 +38,7 @@ ffp `validateSql` is fail-fast only. The product still requires a read-only DB r
 ## `checkDockerAvailable`
 
 Pings the Docker daemon only (`docker-ping.ts`). A missing image is `execute` → `IMAGE_UNAVAILABLE`, not "Docker unavailable".
+
+## Host row limit
+
+`applyHostRowLimit` (`RESULT_ROW_LIMIT` = 1000) runs in `sqlExecutorNode` after a successful `sandbox.execute`. Chat (LangGraph) and Lab (`rerunFromSql` → the same node) share that path so they cannot drift. `truncated = ffpTruncated || hostDidSlice`. If `SANDBOX_MAX_ROWS` is raised above 1000, the host still slices and sets `truncated`.

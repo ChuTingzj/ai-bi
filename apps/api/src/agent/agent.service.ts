@@ -10,7 +10,6 @@ import type {
 import { parseSchemaDoc } from '@ai-bi/shared';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { PrismaService } from '../prisma/prisma.service';
-import { applyHostRowLimit } from '../sandbox/host-row-limit';
 import { SandboxService } from '../sandbox/sandbox.service';
 import { LlmService } from './llm.service';
 import { buildBiAgentGraph } from './graph/bi-agent.graph';
@@ -388,14 +387,7 @@ export class AgentService implements OnModuleInit {
       return { ...empty, sqlError };
     }
 
-    const applied = applyHostRowLimit(exec.sql_result);
-    if (applied.ffpTruncated) {
-      this.logger.log('ffp_truncated');
-    }
-    if (applied.hostDidSlice) {
-      this.logger.log('host_row_limit');
-    }
-    const sqlResult = applied.result;
+    const sqlResult = exec.sql_result;
     const truncated = Boolean(sqlResult.truncated);
 
     yield { type: 'sql', query: input.sql, status: 'success' };

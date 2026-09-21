@@ -52,4 +52,18 @@ describe('applyHostRowLimit truncated flag', () => {
     assert.equal(applied.ffpTruncated, true);
     assert.equal(applied.hostDidSlice, true);
   });
+
+  it('leaves truncated unset when neither ffp nor the host sliced', () => {
+    const applied = applyHostRowLimit(
+      {
+        columns: ['n'],
+        rows: [{ n: 1 }],
+        rowCount: 1,
+      },
+      10,
+    );
+    assert.equal(applied.ffpTruncated, false);
+    assert.equal(applied.hostDidSlice, false);
+    assert.equal(applied.result.truncated, undefined);
+  });
 });

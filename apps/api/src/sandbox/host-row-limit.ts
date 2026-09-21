@@ -21,7 +21,7 @@ export function applyHostRowLimit(
       columns: result.columns,
       rows: result.rows.slice(0, limit),
       rowCount: result.rowCount,
-      truncated: ffpTruncated || hostDidSlice,
+      truncated: ffpTruncated || hostDidSlice || result.truncated,
     },
   };
 }
