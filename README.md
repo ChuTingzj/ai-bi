@@ -41,7 +41,7 @@ docker compose up -d postgres
 # 4. 数据库迁移 + 生成 Client
 pnpm db:migrate
 
-# 5. 预拉 SQL 沙盒 runner（digest 由 ffp-sql-sandbox@0.1.2 固定）
+# 5. 预拉 SQL 沙盒 runner（digest 由 ffp-sql-sandbox@0.1.3 固定）
 docker pull ghcr.io/ffp-tech-lab/ffp-sql-sandbox-runner:v1
 
 # 6. 启动前后端（watch 模式）

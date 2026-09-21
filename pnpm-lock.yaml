@@ -96,8 +96,8 @@ importers:
         specifier: ^4.0.12
         version: 4.0.12
       ffp-sql-sandbox:
-        specifier: 0.1.2
-        version: 0.1.2
+        specifier: 0.1.3
+        version: 0.1.3
       helmet:
         specifier: ^8.3.0
         version: 8.3.0
@@ -1821,8 +1821,8 @@ packages:
   fflate@0.8.3:
     resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
-  ffp-sql-sandbox@0.1.2:
-    resolution: {integrity: sha512-aPuIMgiSXRfI6s6ysQzO7nqD21eWnUj1b8cxrqN+F/NXVcE1Cy6bG/sJEsYCMJy8F6Qqm966D300QrAge1KyLw==}
+  ffp-sql-sandbox@0.1.3:
+    resolution: {integrity: sha512-Tgo1PQkvle9tmPL6voYmlBPob9OMEOOpni8aQ04yvLTLs/MPnZoz0QZSgL3dBgMSw7M0Y5yRXNqO7w34jRnErA==}
     engines: {node: '>=20'}
 
   figures@3.2.0:
@@ -5048,7 +5048,7 @@ snapshots:
 
   fflate@0.8.3: {}
 
-  ffp-sql-sandbox@0.1.2:
+  ffp-sql-sandbox@0.1.3:
     dependencies:
       dockerode: 4.0.12
     transitivePeerDependencies:

@@ -1,6 +1,6 @@
 # ADR: SQL sandbox via ffp-sql-sandbox (allowlist A, denylist, R1)
 
-Pinned dependency: `ffp-sql-sandbox@0.1.2`. Nest keeps `SandboxService.execute(sql, dataSource)` as the host facade. Docker container create/exec, password-in-`Env`, and the local SQL validator execution path live in the package (or are deleted), not in this adapter.
+Pinned dependency: `ffp-sql-sandbox@0.1.3`. Nest keeps `SandboxService.execute(sql, dataSource)` as the host facade. Docker container create/exec, password-in-`Env`, and the local SQL validator execution path live in the package (or are deleted), not in this adapter.
 
 ## Allowlist A
 
@@ -31,7 +31,7 @@ ffp `validateSql` is fail-fast only. The product still requires a read-only DB r
 
 ## Secrets and image
 
-- Password is decrypted with `CryptoService` in this adapter and passed to `executeSql` as `connection.password`. ffp writes it to tmpfs. Container `Env` must not contain the password (`DB_PASS` / `PGPASSWORD` are forbidden here).
+- Password is decrypted with `CryptoService` in this adapter and passed to `executeSql` as `connection.password`. ffp writes it to a host ephemeral file and bind-mounts it **read-only** at `/run/secrets/db_password`. Container `Env` must not contain the password (`DB_PASS` / `PGPASSWORD` are forbidden here).
 - Default runner image is package `DEFAULT_SANDBOX_IMAGE` (digest). `image` is passed only when `SANDBOX_IMAGE` is explicitly set (untrusted override).
 - Limits: `SANDBOX_TIMEOUT_MS`, `SANDBOX_MEMORY_MB`, `SANDBOX_MAX_ROWS`, `SANDBOX_MAX_BYTES`, falling back to `DEFAULT_SANDBOX_LIMITS`.
 
