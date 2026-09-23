@@ -3,7 +3,6 @@
 > 版本：v2.0  
 > 状态：可直接指导开发  
 > 需求来源：[prd.md](./prd.md)  
-> 初版参考：[technology-design.md](./technology-design.md)
 
 ---
 
