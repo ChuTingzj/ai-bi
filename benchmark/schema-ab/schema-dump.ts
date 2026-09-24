@@ -41,3 +41,11 @@ export async function loadSchemaColumns(
     data_type: row.data_type,
   }));
 }
+
+/** An empty live catalog makes both arms identical, so the run must stop. */
+export function assertNonEmptyCatalog(columns: SchemaColumn[]): void {
+  if (columns.length > 0) return;
+  throw new Error(
+    'Schema catalog is empty. Seed the benchmark database before a live run.',
+  );
+}

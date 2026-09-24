@@ -13,7 +13,12 @@ import { buildSqlSystemPrompt, buildSqlUserPrompt } from './prompt';
 import { buildReport, renderReportMarkdown, writeReport } from './report';
 import { runSchemaAb } from './runner';
 import { scoreCandidate } from './score';
-import { formatSchemaDump, loadSchemaColumns, SCHEMA_COLUMNS_SQL } from './schema-dump';
+import {
+  assertNonEmptyCatalog,
+  formatSchemaDump,
+  loadSchemaColumns,
+  SCHEMA_COLUMNS_SQL,
+} from './schema-dump';
 import type { ExecuteOutcome, SchemaAbCase, SchemaColumn } from './types';
 
 const columns: SchemaColumn[] = [
@@ -69,6 +74,14 @@ describe('schema dump', () => {
     );
     assert.equal(dump.includes('NOT NULL'), false);
     assert.equal(dump.includes('example.com'), false);
+  });
+
+  it('rejects an empty live catalog', () => {
+    assert.throws(
+      () => assertNonEmptyCatalog([]),
+      /Schema catalog is empty/,
+    );
+    assert.doesNotThrow(() => assertNonEmptyCatalog(columns));
   });
 });
 

@@ -1,17 +1,25 @@
 # Schema grounding A/B
 
-Experiment-only harness. It does not call the LangGraph / Lab path.
+Experiment-only harness. **Not Lab.** It does not call the LangGraph / Lab path, and it is not `pnpm benchmark:run`.
 
 Both arms ask the same model the same questions from `benchmark/datasets/gold-20.yaml`. The only prompt difference is the schema slot in the production SQL system prompt (`SQL_SYSTEM_PROMPT`):
 
 - **no-schema** — slot left empty
-- **schema-dump** — public base tables from the benchmark database: table name, column name, and data type. No sample rows.
+- **schema-dump** — catalog text described below
 
-Each item is one SQL generation and one execution. Pass means the existing `scoreSql` result has **exec@1 and sql_value_match**. Writes are rejected with `ffp-sql-sandbox` `validateSql` before they reach Postgres. Statement timeout and read-only transaction errors are counted separately.
+Each item is one SQL generation and one execution. Pass means the existing `scoreSql` result has **exec@1 and sql_value_match**. `validateSql` from `ffp-sql-sandbox` only classifies write rejects before the query. The query itself runs on Postgres. Statement timeout and read-only transaction errors are counted separately.
+
+A live run with an empty schema catalog exits non-zero. Both arms would otherwise be identical.
+
+## Not Lab
+
+- The user prompt is `问题：{question}`. Lab's SQL node sends `查询意图：` plus planner JSON. This harness does not run the planner.
+- The schema dump is `INFORMATION_SCHEMA` (table name, column name, data type). It is not `schemaDoc` DDL, and it has no sample rows.
+- Execution is a direct Postgres read-only session on the benchmark database, not `ffp-sql-sandbox`.
 
 ## Kill line
 
-Schema-dump must beat no-schema by **≥ +4/20** on exec@1 ∧ sql_value_match to justify a future schema-truth repo. The report records the delta. This harness does not open that repo. The flag is meaningful only on a live run of all 20 items (`kill_line.applicable`).
+Schema-dump must beat no-schema by **≥ +4/20** on exec@1 ∧ sql_value_match to justify a future schema-truth repo. That line applies to **this harness report only**. It is not a Lab gate and not a `benchmark:run` threshold. The report records the delta. This harness does not open a schema-truth repo. `kill_line.met` is meaningful only on a live run of all 20 items (`kill_line.applicable`).
 
 ## Setup
 

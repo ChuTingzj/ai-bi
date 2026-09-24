@@ -11,3 +11,4 @@ coverage/
 .pnpm-store
 .superpowers/
 __pycache__
+benchmark/reports/

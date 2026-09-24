@@ -9,6 +9,7 @@ import {
   readBenchmarkCatalog,
 } from './db';
 import { loadGoldCases, selectCases } from './dataset';
+import { assertNonEmptyCatalog } from './schema-dump';
 import { generateSqlWithLlm } from './llm';
 import { writeReport } from './report';
 import { runSchemaAb, type GenerateSqlRequest } from './runner';
@@ -184,13 +185,9 @@ async function main() {
       liveClient = createBenchmarkClient();
       await liveClient.connect();
       columns = await readBenchmarkCatalog(liveClient);
+      assertNonEmptyCatalog(columns);
       const tableCount = new Set(columns.map((col) => col.table_name)).size;
       console.log(`Schema dump tables: ${tableCount}`);
-      if (columns.length === 0) {
-        console.warn(
-          'Schema catalog is empty. Seed the benchmark database before treating this run as evidence.',
-        );
-      }
       const client = liveClient;
       executeSql = (sql) =>
         executeCandidateSql({ sql, timeoutMs, client, validate: validateSql });
