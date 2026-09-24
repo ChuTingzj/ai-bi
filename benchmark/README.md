@@ -60,3 +60,12 @@ pnpm benchmark:run -- --id BI-L1-001,BI-L2-003
 
 - `datasets/gold-20.yaml` — 20 条金标准（L1: 12, L2: 8）
 - `seed/` — 电商测试库 DDL 与种子数据
+
+## Schema grounding A/B
+
+实验脚本，不走 LangGraph / Lab。说明与命令见 [schema-ab/README.md](schema-ab/README.md)。
+
+```bash
+pnpm benchmark:schema-ab -- --dry-run
+pnpm benchmark:schema-ab
+```
