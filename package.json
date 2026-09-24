@@ -14,7 +14,9 @@
     "benchmark:db:up": "docker compose up -d benchmark-db",
     "benchmark:db:seed": "docker exec -i ai-bi-benchmark-db-1 psql -U postgres -d benchmark_bi < benchmark/seed/01-schema.sql && docker exec -i ai-bi-benchmark-db-1 psql -U postgres -d benchmark_bi < benchmark/seed/02-data.sql",
     "benchmark:setup": "tsx benchmark/scripts/setup.ts",
-    "benchmark:run": "pnpm --filter @ai-bi/api benchmark:run"
+    "benchmark:run": "pnpm --filter @ai-bi/api benchmark:run",
+    "benchmark:schema-ab": "tsx benchmark/schema-ab/cli.ts",
+    "benchmark:schema-ab:test": "tsx --test benchmark/schema-ab/schema-ab.test.ts"
   },
   "devDependencies": {
     "@ai-bi/db": "workspace:*",
