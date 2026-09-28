@@ -17,8 +17,8 @@ The guidance text is loaded from disk at the start of every run, including `--dr
 
 - The user prompt is `问题：{question}` for both arms. Lab's SQL node sends planner JSON. This harness does not run the planner.
 - The schema dump is `INFORMATION_SCHEMA` (table name, column name, data type).
-- Execution is a direct Postgres read-only session on the benchmark database, not `ffp-sql-sandbox`.
-- Nothing here turns guidance on for product traffic. The production SQL prompt is unchanged.
+- Execution is a direct Postgres read-only session on the benchmark database (`BENCHMARK_DB_*`), same as schema-ab. `validateSql` from `ffp-sql-sandbox` classifies write rejects before the query. Scoring uses `scoreSql`. This experiment does not require the Docker sandbox execute path. The report records the `ffp-sql-sandbox` package version for provenance.
+- Nothing here turns guidance on for product traffic. The production SQL prompt is unchanged. The harness does not wire the planner.
 
 ## Frozen template
 
@@ -57,6 +57,8 @@ Gold-ambiguous. Always out of the kill denominator. Not product failures.
 
 Target agg / filter / grain set (8): `BI-L1-001`, `BI-L1-002`, `BI-L1-003`, `BI-L1-004`, `BI-L1-008`, `BI-L1-009`, `BI-L2-007`, `BI-L2-008`.
 
+The secondary set of 8 is the schema-dump arm’s “exec@1 true but value_match false” residual from the 09-24 triage, classified as aggregation / filter / grain errors (not missing FK/types).
+
 ## Kill line
 
 Let **N** be the clean question count on this run after removing unrecovered LLM aborts / fetch failures and the two gold-ambiguous ids. N is computed. The rule does not use a fixed 20-item denominator.
@@ -64,9 +66,23 @@ Let **N** be the clean question count on this run after removing unrecovered LLM
 - **Primary:** guidance − schema-dump on exec@1 ∧ value_match ≥ **+3/N**
 - **Secondary:** on the target 8, guidance − schema-dump ≥ **+3/8**
 
-Either miss, on a full gold-20 run whose target 8 are free of unrecovered transport errors, is a **kill**: do not ship this guidance onto the main planner path. A dry run, a subset, or an unrecovered abort / fetch failure on a target id is **incomplete**. Re-run the noisy target items until they return SQL. Noise outside the target 8 is dropped from N and the remaining clean questions are still judged.
+Either miss, on a full gold-20 run with no unrecovered abort or fetch failure, is a **kill**: do not ship this guidance onto the main planner path. A dry run or a subset is **incomplete**. Unrecovered LLM abort/fetch is **incomplete**, not a product kill; re-run until stable before reading kill. The report sets `decision: incomplete` when a target-8 id is still noisy. Other unrecovered transport errors are removed from N and are not product failures; do not treat a filled-in delta as a kill read until that list is empty.
 
-`kill_line.met` is true only when both thresholds clear. Arm totals in the report count every item, including exclusions. The kill delta does not.
+`kill_line.met` is true only when both thresholds clear. Arm totals in the report count every item, including exclusions. The kill delta does not. The denominator is clean N, never a fixed /20.
+
+## Live model
+
+Prefer the same model as the 2026-09-24 schema-ab triage. That run recorded `LLM_MODEL=deepseek/deepseek-v4-pro`.
+
+If a different model is used, results are **not** cross-comparable to the 09-24 schema-ab run. Only the within-run A vs B delta is valid for the kill line.
+
+## Risks
+
+| Risk | Reading |
+| --- | --- |
+| Template may overfit the target-8 set | The kill line still uses clean N and the secondary 8. A pass does not prove generality beyond gold-20. |
+| Unrecovered LLM abort/fetch | The run is **incomplete**, not a product kill. Re-run until stable before reading kill. |
+| Where SQL runs | The bench executes against direct Postgres (`BENCHMARK_DB_*`), same as schema-ab. The report records the `ffp-sql-sandbox` package version for provenance. Scoring does not require the Docker sandbox execute path. `validateSql` and `scoreSql` are the existing harness. |
 
 ## Setup
 
@@ -86,8 +102,8 @@ Live LLM calls are optional. CI and merge do not require one. Unit tests do not 
 # shape check. Loads the frozen template. No LLM quota and no database.
 pnpm benchmark:guidance-ab -- --dry-run
 
-# full gold-20, when you choose to spend a live run
-export LLM_MODEL=gpt-4o
+# full gold-20. Prefer the 09-24 triage model.
+export LLM_MODEL=deepseek/deepseek-v4-pro
 export LLM_API_KEY=sk-xxx
 export LLM_API_BASE=https://api.openai.com/v1   # optional
 pnpm benchmark:guidance-ab
@@ -105,7 +121,7 @@ Reports land in `benchmark/reports/guidance-ab/{timestamp}/` (gitignored):
 
 | Variable | Required live | Default |
 | --- | --- | --- |
-| `LLM_MODEL` | yes | — |
+| `LLM_MODEL` | yes | Prefer `deepseek/deepseek-v4-pro`. See Live model. |
 | `LLM_API_KEY` | yes | — |
 | `LLM_API_BASE` | no | `https://api.openai.com/v1` |
 | `BENCHMARK_DB_HOST` | no | `localhost` |
