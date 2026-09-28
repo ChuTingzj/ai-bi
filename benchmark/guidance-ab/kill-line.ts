@@ -19,20 +19,32 @@ export function killLineRule(): string {
   const secondaryDenominator = TARGET_AGG_FILTER_GRAIN_IDS.length;
   return (
     `Primary: guidance − schema-dump on exec@1 ∧ value_match must be >= +${PRIMARY_REQUIRED_DELTA}/N, ` +
-    'where N is the clean question count after excluding unrecovered LLM aborts or fetch failures and the gold-ambiguous ids. ' +
+    'where N drops gold-ambiguous ids and items whose both arms have unrecovered LLM transport noise. ' +
+    'A single-arm LLM abort or fetch failure scores as a fail and stays in N. ' +
     `Secondary: on the target agg/filter/grain set, the same delta must be >= +${SECONDARY_REQUIRED_DELTA}/${secondaryDenominator}. ` +
-    'Either miss kills the experiment. Do not ship this guidance onto the main planner path.'
+    'Either miss kills the experiment. A clear result does not authorize shipping this guidance onto the main planner path.'
   );
 }
 
-/** Abort / fetch-failed from the LLM client. SQL errors stay in the denominator. */
+/**
+ * Harness LLM client strings only.
+ * Postgres "current transaction is aborted" does not match.
+ */
+const LLM_TRANSPORT_NOISE = /^llm:\s*.*(?:operation was aborted|fetch failed)/i;
+
 export function isUnrecoveredLlmNoiseError(error: string | null | undefined): boolean {
   if (!error) return false;
-  return /aborted/i.test(error) || /fetch failed/i.test(error);
+  return LLM_TRANSPORT_NOISE.test(error);
 }
 
+/**
+ * Both arms must show LLM transport noise before the item leaves N.
+ * One noisy arm scores as a fail and the item stays, so an abort cannot erase a schema-dump pass.
+ */
 export function exclusionFor(id: string, errors: Array<string | null>): Exclusion | null {
-  if (errors.some((error) => isUnrecoveredLlmNoiseError(error))) return 'unrecovered-llm-noise';
+  const bothArmsNoisy =
+    errors.length >= 2 && errors.every((error) => isUnrecoveredLlmNoiseError(error));
+  if (bothArmsNoisy) return 'unrecovered-llm-noise';
   if (GOLD_AMBIGUOUS.has(id)) return 'gold-ambiguous';
   return null;
 }
@@ -72,7 +84,7 @@ function delta(items: KillItem[]): number {
 
 /**
  * N is the clean count. A denominator equal to the raw item count is rejected
- * once any gold-ambiguous or unrecovered noise item is in the run.
+ * once any gold-ambiguous id or both-arm LLM transport failure is in the run.
  */
 export function assertCleanDenominator(rawCount: number, cleanCount: number, excludedCount: number): void {
   if (excludedCount > 0 && cleanCount === rawCount) {

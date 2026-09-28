@@ -38,7 +38,7 @@ The file is the B-arm addendum. In short:
 
 From the 2026-09-24 schema-ab run. The same lists live in `benchmark/guidance-ab/pinned.ts` and are copied into each report.
 
-LLM noise. Exclude while the abort or fetch failure is still on the item, or re-run until it is gone. These are not kill-line product failures.
+LLM noise from that run. These ids are not an automatic exclusion list, and they are not product failures. An item leaves N only when **both** arms still show harness transport errors (`llm: This operation was aborted`, `llm: fetch failed`). One noisy arm scores as a fail and the item stays in N.
 
 | Id | 2026-09-24 failure |
 | --- | --- |
@@ -54,19 +54,22 @@ Gold-ambiguous. Always out of the kill denominator. Not product failures.
 | --- | --- |
 | `BI-L1-006` | zero-fill days? |
 | `BI-L1-011` | 14-day window inclusive |
+| `BI-L2-007` | gold `generate_series` zero-fill vs template rule 2 |
 
-Target agg / filter / grain set (8): `BI-L1-001`, `BI-L1-002`, `BI-L1-003`, `BI-L1-004`, `BI-L1-008`, `BI-L1-009`, `BI-L2-007`, `BI-L2-008`.
+Target agg / filter / grain set (7): `BI-L1-001`, `BI-L1-002`, `BI-L1-003`, `BI-L1-004`, `BI-L1-008`, `BI-L1-009`, `BI-L2-008`.
 
-The secondary set of 8 is the schema-dump arm’s “exec@1 true but value_match false” residual from the 09-24 triage, classified as aggregation / filter / grain errors (not missing FK/types).
+`BI-L2-007` left this set because its gold SQL zero-fills with `generate_series`, and frozen template rule 2 forbids inventing calendar zero-fill unless the question asks. The secondary 7 is the rest of the schema-dump arm’s “exec@1 true but value_match false” residual from the 09-24 triage, classified as aggregation / filter / grain errors (not missing FK/types).
 
 ## Kill line
 
-Let **N** be the clean question count on this run after removing unrecovered LLM aborts / fetch failures and the two gold-ambiguous ids. N is computed. The rule does not use a fixed 20-item denominator.
+Let **N** be the clean question count after dropping the gold-ambiguous ids and any item whose **both** arms have unrecovered LLM transport noise. A single-arm abort or fetch failure scores as a fail and stays in N, so it cannot erase a schema-dump pass. N is computed. The rule does not use a fixed 20-item denominator.
 
 - **Primary:** guidance − schema-dump on exec@1 ∧ value_match ≥ **+3/N**
-- **Secondary:** on the target 8, guidance − schema-dump ≥ **+3/8**
+- **Secondary:** on the target 7, guidance − schema-dump ≥ **+3/7**
 
-Either miss, on a full gold-20 run with no unrecovered abort or fetch failure, is a **kill**: do not ship this guidance onto the main planner path. A dry run or a subset is **incomplete**. Unrecovered LLM abort/fetch is **incomplete**, not a product kill; re-run until stable before reading kill. The report sets `decision: incomplete` when a target-8 id is still noisy. Other unrecovered transport errors are removed from N and are not product failures; do not treat a filled-in delta as a kill read until that list is empty.
+Primary +3/N is intentionally softer than schema-ab’s +4/20. A kill-line pass still does not authorize shipping guidance to the planner. There is no out-of-distribution proof.
+
+Either miss, on a full gold-20 run, is a **kill**. A dry run or a subset is **incomplete**. Both-arm LLM transport noise is excluded from N and is not a product kill. If that id is one of the target 7, the run is **incomplete**, because the secondary bar is +3/7 and that id was not scored; re-run until stable before reading kill. Postgres `current transaction is aborted` is an execution failure. It does not match LLM transport noise and does not drop the item.
 
 `kill_line.met` is true only when both thresholds clear. Arm totals in the report count every item, including exclusions. The kill delta does not. The denominator is clean N, never a fixed /20.
 
@@ -80,8 +83,10 @@ If a different model is used, results are **not** cross-comparable to the 09-24 
 
 | Risk | Reading |
 | --- | --- |
-| Template may overfit the target-8 set | The kill line still uses clean N and the secondary 8. A pass does not prove generality beyond gold-20. |
-| Unrecovered LLM abort/fetch | The run is **incomplete**, not a product kill. Re-run until stable before reading kill. |
+| Template may overfit the target-7 set | The kill line still uses clean N and the secondary 7. A pass does not prove generality beyond gold-20, and it does not authorize shipping guidance to the planner. |
+| Single-arm LLM abort/fetch | That arm scores fail. The item stays in N, so a schema-dump pass still cuts the guidance delta. |
+| Both-arm LLM abort/fetch | The item is excluded from N. That is not a product kill. If the id is in the target 7, the run is **incomplete**; re-run until stable before reading kill. |
+| Postgres `current transaction is aborted` | Execution failure. It is not LLM transport noise and does not exclude the item. |
 | Where SQL runs | The bench executes against direct Postgres (`BENCHMARK_DB_*`), same as schema-ab. The report records the `ffp-sql-sandbox` package version for provenance. Scoring does not require the Docker sandbox execute path. `validateSql` and `scoreSql` are the existing harness. |
 
 ## Setup

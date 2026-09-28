@@ -7,7 +7,12 @@ import { buildSqlSystemPrompt } from '../schema-ab/prompt';
 import { loadGoldCases } from '../schema-ab/dataset';
 import type { ExecuteOutcome, SchemaColumn } from '../schema-ab/types';
 import { loadGuidanceTemplate } from './guidance';
-import { assertCleanDenominator, evaluateKillLine, killLineRule } from './kill-line';
+import {
+  assertCleanDenominator,
+  evaluateKillLine,
+  isUnrecoveredLlmNoiseError,
+  killLineRule,
+} from './kill-line';
 import {
   GOLD_AMBIGUOUS_IDS,
   GUIDANCE_TEMPLATE_REPO_PATH,
@@ -93,7 +98,7 @@ function reportFor(
 }
 
 describe('pinned gold-20 ids', () => {
-  it('keeps noise, gold-ambiguous, and the target 8 inside the dataset and disjoint', () => {
+  it('keeps noise, gold-ambiguous, and the target 7 inside the dataset and disjoint', () => {
     const ids = new Set(goldIds);
     assert.equal(goldIds.length, 20);
     for (const id of [...LLM_NOISE_IDS, ...GOLD_AMBIGUOUS_IDS, ...TARGET_AGG_FILTER_GRAIN_IDS]) {
@@ -107,7 +112,7 @@ describe('pinned gold-20 ids', () => {
       assert.equal(target.has(id), false);
     }
     for (const id of ambiguous) assert.equal(target.has(id), false);
-    assert.equal(TARGET_AGG_FILTER_GRAIN_IDS.length, 8);
+    assert.equal(TARGET_AGG_FILTER_GRAIN_IDS.length, 7);
     assert.deepEqual([...LLM_NOISE_IDS], [
       'BI-L2-002',
       'BI-L2-003',
@@ -115,7 +120,7 @@ describe('pinned gold-20 ids', () => {
       'BI-L2-005',
       'BI-L2-006',
     ]);
-    assert.deepEqual([...GOLD_AMBIGUOUS_IDS], ['BI-L1-006', 'BI-L1-011']);
+    assert.deepEqual([...GOLD_AMBIGUOUS_IDS], ['BI-L1-006', 'BI-L1-011', 'BI-L2-007']);
   });
 });
 
@@ -171,7 +176,7 @@ describe('kill line denominator', () => {
     assert.throws(() => assertCleanDenominator(20, 20, 2), /dirty denominator 20/);
     assert.equal(killLineRule().includes('/20'), false);
     assert.match(killLineRule(), /\+3\/N/);
-    assert.match(killLineRule(), /\+3\/8/);
+    assert.match(killLineRule(), /\+3\/7/);
 
     const cleared = reportFor(
       fixture({
@@ -207,11 +212,21 @@ describe('kill line denominator', () => {
     assert.equal(cleared.kill_line.primary.schema_dump_pass, 0);
     assert.equal(cleared.arms.guidance.pass - cleared.arms['schema-dump'].pass, 2);
     assert.equal(cleared.kill_line.secondary.observed_delta, 3);
-    assert.equal(cleared.kill_line.secondary.denominator, 8);
+    assert.equal(cleared.kill_line.secondary.denominator, 7);
     assert.equal(cleared.kill_line.decision, 'clear');
     assert.equal(cleared.kill_line.met, true);
-    assert.deepEqual(cleared.kill_line.primary.excluded_gold_ambiguous, ['BI-L1-006', 'BI-L1-011']);
-    assert.deepEqual(cleared.kill_line.primary.excluded_unrecovered_llm_noise, [...LLM_NOISE_IDS]);
+    assert.equal(cleared.items.find((item) => item.id === 'BI-L2-002')?.primary_included, true);
+    assert.deepEqual(cleared.kill_line.primary.excluded_gold_ambiguous, [
+      'BI-L1-006',
+      'BI-L1-011',
+      'BI-L2-007',
+    ]);
+    assert.deepEqual(cleared.kill_line.primary.excluded_unrecovered_llm_noise, [
+      'BI-L2-003',
+      'BI-L2-004',
+      'BI-L2-005',
+      'BI-L2-006',
+    ]);
 
     const markdown = renderReportMarkdown(cleared);
     assert.doesNotMatch(cleared.kill_line.rule, /\/20\b/);
@@ -228,7 +243,7 @@ describe('kill line denominator', () => {
         'BI-L1-011': { guidance: { pass: true } },
       }),
     );
-    assert.equal(report.kill_line.primary.denominator, 18);
+    assert.equal(report.kill_line.primary.denominator, 17);
     assert.notEqual(report.kill_line.primary.denominator, report.items.length);
     assert.equal(report.kill_line.primary.observed_delta, 0);
     assert.equal(report.kill_line.primary.guidance_pass, 0);
@@ -236,7 +251,7 @@ describe('kill line denominator', () => {
     assert.equal(report.kill_line.decision, 'kill');
   });
 
-  it('kills when either the primary or the target-8 delta misses', () => {
+  it('kills when either the primary or the target-7 delta misses', () => {
     const primaryMiss = reportFor(
       fixture({
         'BI-L1-001': { guidance: { pass: true } },
@@ -259,13 +274,13 @@ describe('kill line denominator', () => {
         'BI-L1-010': { guidance: { pass: true } },
       }),
     );
-    assert.equal(secondaryMiss.kill_line.primary.denominator, 18);
+    assert.equal(secondaryMiss.kill_line.primary.denominator, 17);
     assert.equal(secondaryMiss.kill_line.primary.observed_delta, 3);
     assert.equal(secondaryMiss.kill_line.secondary.observed_delta, 0);
     assert.equal(secondaryMiss.kill_line.decision, 'kill');
   });
 
-  it('counts a recovered noise id and leaves an unrecovered abort out of N', () => {
+  it('counts a recovered noise id and keeps a single-arm abort inside N', () => {
     const recovered = reportFor(
       fixture({
         'BI-L2-002': {
@@ -274,28 +289,77 @@ describe('kill line denominator', () => {
         },
       }),
     );
-    assert.equal(recovered.kill_line.primary.denominator, 18);
+    assert.equal(recovered.kill_line.primary.denominator, 17);
     assert.equal(recovered.kill_line.primary.excluded_unrecovered_llm_noise.length, 0);
     assert.equal(recovered.kill_line.primary.guidance_pass, 1);
     assert.equal(recovered.items.find((item) => item.id === 'BI-L2-002')?.primary_included, true);
 
-    const aborted = reportFor(
+    const gamed = reportFor(
       fixture({
-        'BI-L2-008': {
+        'BI-L1-001': {
           dump: { pass: true },
           guidance: { error: 'llm: This operation was aborted' },
         },
-        'BI-L1-001': { guidance: { pass: true } },
-        'BI-L1-002': { guidance: { pass: true } },
-        'BI-L1-003': { guidance: { pass: true } },
-        'BI-L1-004': { guidance: { pass: true } },
       }),
     );
-    assert.equal(aborted.kill_line.decision, 'incomplete');
-    assert.equal(aborted.kill_line.applicable, false);
-    assert.deepEqual(aborted.kill_line.secondary.blocked_unrecovered_llm_noise, ['BI-L2-008']);
-    assert.equal(aborted.kill_line.primary.schema_dump_pass, 0);
-    assert.equal(aborted.items.find((item) => item.id === 'BI-L2-008')?.exclusion, 'unrecovered-llm-noise');
+    const gamedItem = gamed.items.find((item) => item.id === 'BI-L1-001');
+    assert.equal(gamedItem?.exclusion, null);
+    assert.equal(gamedItem?.primary_included, true);
+    assert.equal(gamedItem?.arms['schema-dump'].pass, true);
+    assert.equal(gamedItem?.arms.guidance.pass, false);
+    assert.equal(gamed.kill_line.primary.denominator, 17);
+    assert.equal(gamed.kill_line.primary.schema_dump_pass, 1);
+    assert.equal(gamed.kill_line.primary.guidance_pass, 0);
+    assert.equal(gamed.kill_line.primary.observed_delta, -1);
+    assert.equal(gamed.kill_line.secondary.observed_delta, -1);
+    assert.equal(gamed.kill_line.decision, 'kill');
+  });
+
+  it('excludes an item only when both arms have LLM transport noise', () => {
+    assert.equal(isUnrecoveredLlmNoiseError('llm: This operation was aborted'), true);
+    assert.equal(isUnrecoveredLlmNoiseError('llm: fetch failed'), true);
+    assert.equal(isUnrecoveredLlmNoiseError('current transaction is aborted'), false);
+    assert.equal(isUnrecoveredLlmNoiseError('llm: current transaction is aborted'), false);
+    assert.equal(isUnrecoveredLlmNoiseError('This operation was aborted'), false);
+
+    const postgres = reportFor(
+      fixture({
+        'BI-L1-005': {
+          dump: { error: 'current transaction is aborted' },
+          guidance: { error: 'current transaction is aborted' },
+        },
+      }),
+    );
+    const pgItem = postgres.items.find((item) => item.id === 'BI-L1-005');
+    assert.equal(pgItem?.exclusion, null);
+    assert.equal(pgItem?.primary_included, true);
+    assert.equal(postgres.kill_line.primary.excluded_unrecovered_llm_noise.length, 0);
+    assert.equal(postgres.kill_line.primary.denominator, 17);
+
+    const both = reportFor(
+      fixture({
+        'BI-L1-005': {
+          dump: { error: 'llm: fetch failed' },
+          guidance: { error: 'llm: This operation was aborted' },
+        },
+      }),
+    );
+    assert.equal(both.items.find((item) => item.id === 'BI-L1-005')?.exclusion, 'unrecovered-llm-noise');
+    assert.equal(both.kill_line.primary.denominator, 16);
+    assert.deepEqual(both.kill_line.primary.excluded_unrecovered_llm_noise, ['BI-L1-005']);
+    assert.equal(both.kill_line.decision, 'kill');
+
+    const targetBoth = reportFor(
+      fixture({
+        'BI-L2-008': {
+          dump: { error: 'llm: fetch failed' },
+          guidance: { error: 'llm: This operation was aborted' },
+        },
+      }),
+    );
+    assert.equal(targetBoth.items.find((item) => item.id === 'BI-L2-008')?.primary_included, false);
+    assert.deepEqual(targetBoth.kill_line.secondary.blocked_unrecovered_llm_noise, ['BI-L2-008']);
+    assert.equal(targetBoth.kill_line.decision, 'incomplete');
   });
 
   it('does not judge a dry run or a subset', () => {
@@ -412,7 +476,7 @@ describe('evaluateKillLine direct', () => {
   it('uses the same clean N as the report', () => {
     const items = fixture();
     const line = evaluateKillLine({ items, dryRun: false, fullDataset: true });
-    assert.equal(line.primary.denominator, 18);
+    assert.equal(line.primary.denominator, 17);
     assert.equal(line.decision, 'kill');
   });
 });

@@ -11,7 +11,10 @@ export const TRIAGE_RUN = {
   gitSha: '999ed108199affddada88076160d82cf71c516a5',
 } as const;
 
-/** LLM transport noise from that run. Exclude while the abort or fetch failure is still present. */
+/**
+ * Transport failures observed on 2026-09-24. Not an automatic exclusion list.
+ * An item leaves N only when both arms still show harness LLM transport errors.
+ */
 export const LLM_NOISE_IDS = [
   'BI-L2-002',
   'BI-L2-003',
@@ -20,10 +23,14 @@ export const LLM_NOISE_IDS = [
   'BI-L2-006',
 ] as const;
 
-/** Out of the kill denominator. These are gold-ambiguous, not product failures. */
-export const GOLD_AMBIGUOUS_IDS = ['BI-L1-006', 'BI-L1-011'] as const;
+/**
+ * Out of the kill denominator. Not product failures.
+ * BI-L2-007 moved here from the target set: gold SQL zero-fills with generate_series,
+ * and frozen template rule 2 forbids inventing calendar zero-fill unless the question asks.
+ */
+export const GOLD_AMBIGUOUS_IDS = ['BI-L1-006', 'BI-L1-011', 'BI-L2-007'] as const;
 
-/** Agg / filter / grain questions. Secondary kill line is +3 on this set. */
+/** Agg / filter / grain questions. Secondary kill line is +3/7 on this set. */
 export const TARGET_AGG_FILTER_GRAIN_IDS = [
   'BI-L1-001',
   'BI-L1-002',
@@ -31,7 +38,6 @@ export const TARGET_AGG_FILTER_GRAIN_IDS = [
   'BI-L1-004',
   'BI-L1-008',
   'BI-L1-009',
-  'BI-L2-007',
   'BI-L2-008',
 ] as const;
 
@@ -55,4 +61,5 @@ export const LLM_NOISE_NOTES: Record<(typeof LLM_NOISE_IDS)[number], string> = {
 export const GOLD_AMBIGUOUS_NOTES: Record<(typeof GOLD_AMBIGUOUS_IDS)[number], string> = {
   'BI-L1-006': 'zero-fill days?',
   'BI-L1-011': '14-day window inclusive',
+  'BI-L2-007': 'gold generate_series zero-fill vs template rule 2',
 };

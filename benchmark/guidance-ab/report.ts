@@ -156,6 +156,8 @@ export function renderReportMarkdown(report: GuidanceAbReport): string {
     '',
     report.kill_line.rule,
     '',
+    'Primary +3/N is intentionally softer than the schema-ab bar of +4 on its full item line. A clear decision does not authorize shipping guidance to the planner.',
+    '',
     `Decision: **${report.kill_line.decision}**. Applicable: ${report.kill_line.applicable}. Met: ${report.kill_line.met}.`,
     '',
     `Primary N = ${primary.denominator}. Observed ${signed(primary.observed_delta)}/${primary.denominator} (guidance ${primary.guidance_pass}, schema-dump ${primary.schema_dump_pass}). Required +${primary.required_delta}/N. Met: ${primary.met}.`,
