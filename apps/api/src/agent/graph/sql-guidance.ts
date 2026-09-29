@@ -8,6 +8,11 @@ export const GUIDANCE_TEMPLATE_VERSION = 'guidance-intent-agg-grain-v1';
 export const GUIDANCE_TEMPLATE_REPO_PATH =
   'apps/api/src/agent/graph/templates/intent-aggregation-grain-v1.md';
 
+/** Harness user line. Product SQL prepends this to planner JSON. */
+export function formatSqlQuestionLine(question: string): string {
+  return `问题：${question}`;
+}
+
 const TEMPLATE_FILENAME = 'intent-aggregation-grain-v1.md';
 const SCHEMA_TOKEN = '{table_schema}';
 const VERSION_LINE = /^version:\s*(\S+)\s*$/m;

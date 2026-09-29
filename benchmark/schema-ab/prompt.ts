@@ -1,4 +1,7 @@
-import { fillSqlSystemPrompt } from '../../apps/api/src/agent/graph/sql-guidance';
+import {
+  fillSqlSystemPrompt,
+  formatSqlQuestionLine,
+} from '../../apps/api/src/agent/graph/sql-guidance';
 import type { ArmName } from './types';
 
 /**
@@ -21,5 +24,5 @@ export function buildSqlSystemPrompt(arm: ArmName, schemaDump: string): string {
 
 /** Same user text for both arms. The question is the only NL input. */
 export function buildSqlUserPrompt(question: string): string {
-  return `问题：${question}`;
+  return formatSqlQuestionLine(question);
 }

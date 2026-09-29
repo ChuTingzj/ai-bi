@@ -15,7 +15,7 @@ The guidance text is loaded from disk at the start of every run, including `--dr
 
 ## Not Lab
 
-- The user prompt is `问题：{question}` for both arms. Lab's SQL node sends `查询意图：{planner JSON}`. This harness does not run the planner. A CLEAR on this harness is not a product end-to-end result. See Product SQL.
+- The user prompt is `问题：{question}` for both arms. Product `sqlGeneratorNode` now sends that same line from `state.question`, then `查询意图：{planner JSON}`. This harness still does not run the planner. A CLEAR on this harness is not a product end-to-end result. See Product SQL.
 - The schema dump is `INFORMATION_SCHEMA` (table name, column name, data type).
 - Execution is a direct Postgres read-only session on the benchmark database (`BENCHMARK_DB_*`), same as schema-ab. `validateSql` from `ffp-sql-sandbox` classifies write rejects before the query. Scoring uses `scoreSql`. This experiment does not require the Docker sandbox execute path. The report records the `ffp-sql-sandbox` package version for provenance.
 - The harness does not call the planner or the Lab graph. Product wiring is described under Product SQL. The planner system prompt is unchanged.
@@ -67,7 +67,7 @@ Let **N** be the clean question count after dropping the gold-ambiguous ids and 
 - **Primary:** guidance − schema-dump on exec@1 ∧ value_match ≥ **+3/N**
 - **Secondary:** on the target 7, guidance − schema-dump ≥ **+3/7**
 
-Primary +3/N is intentionally softer than schema-ab’s +4/20. A kill-line pass measures the harness user prompt `问题：{question}` only. It does not measure Lab's `查询意图：{planner JSON}`, and it does not authorize putting this text on the planner. There is no out-of-distribution proof.
+Primary +3/N is intentionally softer than schema-ab’s +4/20. A kill-line pass measures the harness user prompt `问题：{question}` with no planner JSON. Product SQL now includes that line plus `查询意图：{planner JSON}`, so the prompt-shape gap is closed, but the CLEAR numbers still are not a Lab measurement. There is no out-of-distribution proof.
 
 Either miss, on a full gold-20 run, is a **kill**. A dry run or a subset is **incomplete**. Both-arm LLM transport noise is excluded from N and is not a product kill. If that id is one of the target 7, the run is **incomplete**, because the secondary bar is +3/7 and that id was not scored; re-run until stable before reading kill. Postgres `current transaction is aborted` is an execution failure. It does not match LLM transport noise and does not drop the item.
 
@@ -93,7 +93,17 @@ If a different model is used, results are **not** cross-comparable to the 09-24 
 
 `sqlGeneratorNode` appends this file after the schema-filled `SQL_SYSTEM_PROMPT` through `buildSqlSystemPromptWithGuidance` (the same `appendGuidanceAddendum` as arm B). The planner is unchanged. The addendum is always on. There is no env kill switch.
 
-**CLEAR is not product lift.** The 2026-09-29 CLEAR (`LLM_MODEL=deepseek/deepseek-v4-pro`, report `benchmark/reports/guidance-ab/2026-09-29T03-43-53-909Z`, primary +9/17, secondary +5/7) proved the harness user prompt `问题：{question}`. Lab sends `查询意图：{planner JSON}`. Product end-to-end lift stays a hypothesis until it is measured. `BI-L1-008` and `BI-L2-008` stay known residuals (FAIL on both arms).
+The SQL HumanMessage is joined with blank lines:
+
+```
+问题：{state.question}
+
+查询意图：{JSON.stringify(intent)}
+```
+
+`state.question` is the raw workflow question. On a SQL retry, the same message also appends `上一次生成的 SQL：…` and `上一次执行错误：…`. That closes the B1/B2 prompt-shape gap (the template now sees the original question line, and intent stays). It does not remeasure the kill line.
+
+**CLEAR is not product lift.** The 2026-09-29 CLEAR (`LLM_MODEL=deepseek/deepseek-v4-pro`, report `benchmark/reports/guidance-ab/2026-09-29T03-43-53-909Z`, primary +9/17, secondary +5/7) proved the harness user prompt `问题：{question}` alone. Product now sends that line plus planner JSON. Product end-to-end lift stays a hypothesis until a product-path remeasure exists. `BI-L1-008` and `BI-L2-008` stay known residuals (FAIL on both arms).
 
 **Rollback (only path):** Revert PR #9. That removes the `buildSqlSystemPromptWithGuidance` call in `sqlGeneratorNode`. Owner: zhangjing.
 
