@@ -72,7 +72,7 @@ pnpm benchmark:schema-ab
 
 ## Guidance A/B
 
-实验脚本，不走 LangGraph / Lab，也不把引导写进产品规划器。A 臂是 schema-dump，B 臂是 schema-dump 加上冻结的意图 / 聚合 / 粒度模板。说明与命令见 [guidance-ab/README.md](guidance-ab/README.md)。
+实验脚本，不走 LangGraph / Lab。A 臂是 schema-dump，B 臂是 schema-dump 加上冻结的意图 / 聚合 / 粒度模板。产品 SQL 节点（`sqlGeneratorNode`）在已填入 schema 的系统提示后附加同一份模板，与 B 臂相同；规划器系统提示不变。说明与命令见 [guidance-ab/README.md](guidance-ab/README.md)。
 
 ```bash
 pnpm benchmark:guidance-ab -- --dry-run

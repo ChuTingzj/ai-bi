@@ -16,8 +16,8 @@ import {
   ANALYST_SYSTEM_PROMPT,
   CHART_SYSTEM_PROMPT,
   PLANNER_SYSTEM_PROMPT,
-  SQL_SYSTEM_PROMPT,
 } from './prompts';
+import { buildSqlSystemPromptWithGuidance, loadGuidanceTemplate } from './sql-guidance';
 
 function messageContentToText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -141,9 +141,11 @@ export function createNodes(deps: NodeDeps) {
     });
     const dialect = dataSource?.type === 'MYSQL' ? 'MySQL' : 'PostgreSQL';
 
-    const systemPrompt = SQL_SYSTEM_PROMPT.replace('{dialect}', dialect).replace(
-      '{table_schema}',
+    const guidance = loadGuidanceTemplate();
+    const systemPrompt = buildSqlSystemPromptWithGuidance(
+      dialect,
       state.table_schema,
+      guidance.body,
     );
     const userParts = [`查询意图：${JSON.stringify(state.intent)}`];
     if (state.sql_error) {

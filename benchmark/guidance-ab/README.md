@@ -18,15 +18,15 @@ The guidance text is loaded from disk at the start of every run, including `--dr
 - The user prompt is `问题：{question}` for both arms. Lab's SQL node sends planner JSON. This harness does not run the planner.
 - The schema dump is `INFORMATION_SCHEMA` (table name, column name, data type).
 - Execution is a direct Postgres read-only session on the benchmark database (`BENCHMARK_DB_*`), same as schema-ab. `validateSql` from `ffp-sql-sandbox` classifies write rejects before the query. Scoring uses `scoreSql`. This experiment does not require the Docker sandbox execute path. The report records the `ffp-sql-sandbox` package version for provenance.
-- Nothing here turns guidance on for product traffic. The production SQL prompt is unchanged. The harness does not wire the planner.
+- The harness does not call the planner or the Lab graph. Product `sqlGeneratorNode` appends this same file after the schema-filled SQL system prompt, which is the arm B shape. The planner system prompt is unchanged.
 
 ## Frozen template
 
-`benchmark/guidance-ab/templates/intent-aggregation-grain-v1.md`
+`apps/api/src/agent/graph/templates/intent-aggregation-grain-v1.md`
 
 Version string: `guidance-intent-agg-grain-v1`. The sibling `.sha256` file must match the template bytes. The report records path, version, and sha256. Edit the template only by bumping the version and the checksum together, before a run, never during one.
 
-The file is the B-arm addendum. In short:
+The file is the B-arm addendum and the product SQL addendum. `loadGuidanceTemplate` is the only reader, so the harness and `sqlGeneratorNode` share these bytes. In short:
 
 1. Prefer fact tables and filters that match the question. Default `orders.status = 'completed'` for sales, GMV, and order counts unless cancelled or all statuses are explicit.
 2. Aggregate at the day, week, or month the question asks for. Do not invent a calendar zero-fill unless asked.

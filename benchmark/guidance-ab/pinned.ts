@@ -45,10 +45,10 @@ export const PRIMARY_REQUIRED_DELTA = 3;
 
 export const SECONDARY_REQUIRED_DELTA = 3;
 
-export const GUIDANCE_TEMPLATE_VERSION = 'guidance-intent-agg-grain-v1';
-
-export const GUIDANCE_TEMPLATE_REPO_PATH =
-  'benchmark/guidance-ab/templates/intent-aggregation-grain-v1.md';
+export {
+  GUIDANCE_TEMPLATE_REPO_PATH,
+  GUIDANCE_TEMPLATE_VERSION,
+} from '../../apps/api/src/agent/graph/sql-guidance';
 
 export const LLM_NOISE_NOTES: Record<(typeof LLM_NOISE_IDS)[number], string> = {
   'BI-L2-002': 'abort',
