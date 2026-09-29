@@ -1361,6 +1361,8 @@ User:
 {sql_error ? "上一次执行错误：" + sql_error : ""}
 ```
 
+系统提示在 `{table_schema}` 之后附加冻结模板 `apps/api/src/agent/graph/templates/intent-aggregation-grain-v1.md`（`guidance-intent-agg-grain-v1`），调用点是 `sqlGeneratorNode` 里的 `buildSqlSystemPromptWithGuidance`。2026-09-29 guidance-ab CLEAR 只覆盖 harness 用户句 `问题：{question}`，不覆盖这里的 `查询意图：{intent_json}`。产品端到端提升仍是假设。`BI-L1-008` 与 `BI-L2-008` 在两臂均为 FAIL。回滚只 revert PR #9（负责人 zhangjing）。无环境变量开关。
+
 #### 5.6.3 Review Agent（sqlExecutorNode 实现，非 LLM）
 
 Review Agent 不调用 LLM，而是：
