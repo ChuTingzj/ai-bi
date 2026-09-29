@@ -15,18 +15,18 @@ The guidance text is loaded from disk at the start of every run, including `--dr
 
 ## Not Lab
 
-- The user prompt is `问题：{question}` for both arms. Lab's SQL node sends planner JSON. This harness does not run the planner.
+- The user prompt is `问题：{question}` for both arms. Product `sqlGeneratorNode` now sends that same line from `state.question`, then `查询意图：{planner JSON}`. This harness still does not run the planner. A CLEAR on this harness is not a product end-to-end result. See Product SQL.
 - The schema dump is `INFORMATION_SCHEMA` (table name, column name, data type).
 - Execution is a direct Postgres read-only session on the benchmark database (`BENCHMARK_DB_*`), same as schema-ab. `validateSql` from `ffp-sql-sandbox` classifies write rejects before the query. Scoring uses `scoreSql`. This experiment does not require the Docker sandbox execute path. The report records the `ffp-sql-sandbox` package version for provenance.
-- Nothing here turns guidance on for product traffic. The production SQL prompt is unchanged. The harness does not wire the planner.
+- The harness does not call the planner or the Lab graph. Product wiring is described under Product SQL. The planner system prompt is unchanged.
 
 ## Frozen template
 
-`benchmark/guidance-ab/templates/intent-aggregation-grain-v1.md`
+`apps/api/src/agent/graph/templates/intent-aggregation-grain-v1.md`
 
 Version string: `guidance-intent-agg-grain-v1`. The sibling `.sha256` file must match the template bytes. The report records path, version, and sha256. Edit the template only by bumping the version and the checksum together, before a run, never during one.
 
-The file is the B-arm addendum. In short:
+The file is the B-arm addendum. Product `sqlGeneratorNode` loads the same bytes. In short:
 
 1. Prefer fact tables and filters that match the question. Default `orders.status = 'completed'` for sales, GMV, and order counts unless cancelled or all statuses are explicit.
 2. Aggregate at the day, week, or month the question asks for. Do not invent a calendar zero-fill unless asked.
@@ -67,7 +67,7 @@ Let **N** be the clean question count after dropping the gold-ambiguous ids and 
 - **Primary:** guidance − schema-dump on exec@1 ∧ value_match ≥ **+3/N**
 - **Secondary:** on the target 7, guidance − schema-dump ≥ **+3/7**
 
-Primary +3/N is intentionally softer than schema-ab’s +4/20. A kill-line pass still does not authorize shipping guidance to the planner. There is no out-of-distribution proof.
+Primary +3/N is intentionally softer than schema-ab’s +4/20. A kill-line pass measures the harness user prompt `问题：{question}` with no planner JSON. Product SQL now includes that line plus `查询意图：{planner JSON}`, so the prompt-shape gap is closed, but the CLEAR numbers still are not a Lab measurement. There is no out-of-distribution proof.
 
 Either miss, on a full gold-20 run, is a **kill**. A dry run or a subset is **incomplete**. Both-arm LLM transport noise is excluded from N and is not a product kill. If that id is one of the target 7, the run is **incomplete**, because the secondary bar is +3/7 and that id was not scored; re-run until stable before reading kill. Postgres `current transaction is aborted` is an execution failure. It does not match LLM transport noise and does not drop the item.
 
@@ -83,11 +83,35 @@ If a different model is used, results are **not** cross-comparable to the 09-24 
 
 | Risk | Reading |
 | --- | --- |
-| Template may overfit the target-7 set | The kill line still uses clean N and the secondary 7. A pass does not prove generality beyond gold-20, and it does not authorize shipping guidance to the planner. |
+| Template may overfit the target-7 set | The kill line still uses clean N and the secondary 7. A pass does not prove generality beyond gold-20. Product traffic is a separate risk. See Product SQL. |
 | Single-arm LLM abort/fetch | That arm scores fail. The item stays in N, so a schema-dump pass still cuts the guidance delta. |
 | Both-arm LLM abort/fetch | The item is excluded from N. That is not a product kill. If the id is in the target 7, the run is **incomplete**; re-run until stable before reading kill. |
 | Postgres `current transaction is aborted` | Execution failure. It is not LLM transport noise and does not exclude the item. |
 | Where SQL runs | The bench executes against direct Postgres (`BENCHMARK_DB_*`), same as schema-ab. The report records the `ffp-sql-sandbox` package version for provenance. Scoring does not require the Docker sandbox execute path. `validateSql` and `scoreSql` are the existing harness. |
+
+## Product SQL
+
+`sqlGeneratorNode` appends this file after the schema-filled `SQL_SYSTEM_PROMPT` through `buildSqlSystemPromptWithGuidance` (the same `appendGuidanceAddendum` as arm B). The planner is unchanged. The addendum is always on. There is no env kill switch.
+
+The SQL HumanMessage is joined with blank lines:
+
+```
+问题：{state.question}
+
+查询意图：{JSON.stringify(intent)}
+```
+
+`state.question` is the raw workflow question. On a SQL retry, the same message also appends `上一次生成的 SQL：…` and `上一次执行错误：…`. That closes the B1/B2 prompt-shape gap (the template now sees the original question line, and intent stays). It does not remeasure the kill line.
+
+**CLEAR is not product lift.** The 2026-09-29 CLEAR (`LLM_MODEL=deepseek/deepseek-v4-pro`, report `benchmark/reports/guidance-ab/2026-09-29T03-43-53-909Z`, primary +9/17, secondary +5/7) proved the harness user prompt `问题：{question}` alone. Product now sends that line plus planner JSON. Product end-to-end lift stays a hypothesis until a product-path remeasure exists. `BI-L1-008` and `BI-L2-008` stay known residuals (FAIL on both arms).
+
+**Rollback (only path):** Revert PR #9. That removes the `buildSqlSystemPromptWithGuidance` call in `sqlGeneratorNode`. Owner: zhangjing.
+
+| Risk | Reading |
+| --- | --- |
+| Always-on guidance on non-target / out-of-distribution questions | Every product SQL generation gets the addendum, not only the target 7. CLEAR did not measure those questions. |
+| MySQL gets the same body | CLEAR ran on the Postgres bench. MySQL product traffic uses dialect `MySQL` and the same template bytes, with no CLEAR evidence. |
+| Template overfit into prod traffic | The frozen rules target gold-20 agg / filter / grain residuals. They now run on live questions. |
 
 ## Setup
 

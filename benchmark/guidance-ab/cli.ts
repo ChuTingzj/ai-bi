@@ -73,7 +73,7 @@ Options:
   --output <path>      Report directory
   --model <name>       Override LLM_MODEL (recorded before the run)
 
-The frozen guidance file is always benchmark/guidance-ab/templates/intent-aggregation-grain-v1.md.
+The frozen guidance file is always apps/api/src/agent/graph/templates/intent-aggregation-grain-v1.md.
 There is no flag to swap that text.
 
 Live run env:

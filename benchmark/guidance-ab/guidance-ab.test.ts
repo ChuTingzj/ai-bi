@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 import { buildSqlSystemPrompt } from '../schema-ab/prompt';
 import { loadGoldCases } from '../schema-ab/dataset';
 import type { ExecuteOutcome, SchemaColumn } from '../schema-ab/types';
-import { loadGuidanceTemplate } from './guidance';
+import { GUIDANCE_TEMPLATE_FILE, loadGuidanceTemplate } from './guidance';
 import {
   assertCleanDenominator,
   evaluateKillLine,
@@ -147,7 +147,7 @@ describe('frozen guidance template', () => {
   it('refuses a mid-run checksum or version edit', () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'guidance-template-'));
     const filePath = resolve(dir, 'template.md');
-    const original = readFileSync(resolve(__dirname, 'templates/intent-aggregation-grain-v1.md'), 'utf8');
+    const original = readFileSync(GUIDANCE_TEMPLATE_FILE, 'utf8');
     writeFileSync(filePath, original);
     writeFileSync(`${filePath}.sha256`, 'not-the-hash\n');
     assert.throws(() => loadGuidanceTemplate(filePath), /checksum mismatch/);

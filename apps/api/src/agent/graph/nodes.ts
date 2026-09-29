@@ -16,8 +16,12 @@ import {
   ANALYST_SYSTEM_PROMPT,
   CHART_SYSTEM_PROMPT,
   PLANNER_SYSTEM_PROMPT,
-  SQL_SYSTEM_PROMPT,
 } from './prompts';
+import {
+  buildSqlSystemPromptWithGuidance,
+  formatSqlQuestionLine,
+  loadGuidanceTemplate,
+} from './sql-guidance';
 
 function messageContentToText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -141,11 +145,16 @@ export function createNodes(deps: NodeDeps) {
     });
     const dialect = dataSource?.type === 'MYSQL' ? 'MySQL' : 'PostgreSQL';
 
-    const systemPrompt = SQL_SYSTEM_PROMPT.replace('{dialect}', dialect).replace(
-      '{table_schema}',
+    const guidance = loadGuidanceTemplate();
+    const systemPrompt = buildSqlSystemPromptWithGuidance(
+      dialect,
       state.table_schema,
+      guidance.body,
     );
-    const userParts = [`查询意图：${JSON.stringify(state.intent)}`];
+    const userParts = [
+      formatSqlQuestionLine(state.question),
+      `查询意图：${JSON.stringify(state.intent)}`,
+    ];
     if (state.sql_error) {
       userParts.push(`上一次生成的 SQL：${state.generated_sql}`);
       userParts.push(`上一次执行错误：${state.sql_error}`);

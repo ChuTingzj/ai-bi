@@ -72,7 +72,7 @@ pnpm benchmark:schema-ab
 
 ## Guidance A/B
 
-实验脚本，不走 LangGraph / Lab，也不把引导写进产品规划器。A 臂是 schema-dump，B 臂是 schema-dump 加上冻结的意图 / 聚合 / 粒度模板。说明与命令见 [guidance-ab/README.md](guidance-ab/README.md)。
+实验脚本，不走 LangGraph / Lab。A 臂是 schema-dump，B 臂是 schema-dump 加上冻结的意图 / 聚合 / 粒度模板。产品 `sqlGeneratorNode` 的用户消息同时包含 `问题：{state.question}` 与 `查询意图：{planner JSON}`，系统提示在 schema 槽后附加同一份模板。2026-09-29 CLEAR 仍只覆盖 harness 的单独问题句，产品端到端提升尚未重测。回滚只 revert PR #9（负责人 zhangjing）。说明与风险见 [guidance-ab/README.md](guidance-ab/README.md)。
 
 ```bash
 pnpm benchmark:guidance-ab -- --dry-run

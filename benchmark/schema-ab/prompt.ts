@@ -1,29 +1,20 @@
-import { SQL_SYSTEM_PROMPT } from '../../apps/api/src/agent/graph/prompts';
+import {
+  fillSqlSystemPrompt,
+  formatSqlQuestionLine,
+} from '../../apps/api/src/agent/graph/sql-guidance';
 import type { ArmName } from './types';
 
-const SCHEMA_TOKEN = '{table_schema}';
-
-function fillTableSchema(tableSchema: string): string {
-  const withDialect = SQL_SYSTEM_PROMPT.replaceAll('{dialect}', 'PostgreSQL');
-  const at = withDialect.indexOf(SCHEMA_TOKEN);
-  if (at < 0) {
-    throw new Error('SQL_SYSTEM_PROMPT is missing {table_schema}');
-  }
-  return (
-    withDialect.slice(0, at) + tableSchema + withDialect.slice(at + SCHEMA_TOKEN.length)
-  );
-}
-
 /**
- * Both arms use the production SQL system prompt.
+ * Both arms fill the production SQL system prompt's schema slot.
  * no-schema leaves the schema slot empty. schema-dump inserts the catalog text.
+ * This harness does not append the frozen guidance addendum. Product SQL generation does.
  */
 export function buildSqlSystemPrompt(arm: ArmName, schemaDump: string): string {
   switch (arm) {
     case 'no-schema':
-      return fillTableSchema('');
+      return fillSqlSystemPrompt('PostgreSQL', '');
     case 'schema-dump':
-      return fillTableSchema(schemaDump);
+      return fillSqlSystemPrompt('PostgreSQL', schemaDump);
     default: {
       const unexpected: never = arm;
       throw new Error(`unexpected arm: ${unexpected}`);
@@ -33,5 +24,5 @@ export function buildSqlSystemPrompt(arm: ArmName, schemaDump: string): string {
 
 /** Same user text for both arms. The question is the only NL input. */
 export function buildSqlUserPrompt(question: string): string {
-  return `问题：${question}`;
+  return formatSqlQuestionLine(question);
 }

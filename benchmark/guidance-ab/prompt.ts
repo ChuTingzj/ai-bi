@@ -1,3 +1,4 @@
+import { appendGuidanceAddendum } from '../../apps/api/src/agent/graph/sql-guidance';
 import { buildSqlSystemPrompt, buildSqlUserPrompt } from '../schema-ab/prompt';
 import type { ArmName } from './types';
 
@@ -16,13 +17,8 @@ export function buildGuidanceAbSystemPrompt(
   switch (arm) {
     case 'schema-dump':
       return dump;
-    case 'guidance': {
-      const body = guidanceBody.trim();
-      if (!body) {
-        throw new Error('Guidance template body is empty. Refusing to run arm B.');
-      }
-      return `${dump}\n\n${body}\n`;
-    }
+    case 'guidance':
+      return appendGuidanceAddendum(dump, guidanceBody);
     default: {
       const unexpected: never = arm;
       throw new Error(`unexpected arm: ${unexpected}`);

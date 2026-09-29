@@ -13,7 +13,7 @@ A live run with an empty schema catalog exits non-zero. Both arms would otherwis
 
 ## Not Lab
 
-- The user prompt is `问题：{question}`. Lab's SQL node sends `查询意图：` plus planner JSON. This harness does not run the planner.
+- The user prompt is `问题：{question}`. Product `sqlGeneratorNode` sends that line from `state.question`, then `查询意图：` plus planner JSON. This harness does not run the planner.
 - The schema dump is `INFORMATION_SCHEMA` (table name, column name, data type). It is not `schemaDoc` DDL, and it has no sample rows.
 - Execution is a direct Postgres read-only session on the benchmark database, not `ffp-sql-sandbox`.
 
