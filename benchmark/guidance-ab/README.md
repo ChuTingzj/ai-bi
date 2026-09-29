@@ -91,7 +91,16 @@ If a different model is used, results are **not** cross-comparable to the 09-24 
 
 ## Product SQL
 
-`sqlGeneratorNode` appends this file after the schema-filled `SQL_SYSTEM_PROMPT` through `buildSqlSystemPromptWithGuidance` (the same `appendGuidanceAddendum` as arm B). The planner is unchanged. The addendum is always on. There is no env kill switch.
+`sqlGeneratorNode` appends this file after the schema-filled `SQL_SYSTEM_PROMPT` through `appendGuidanceAddendum` (the same addendum as arm B) when product guidance is on. The planner is unchanged. This harness does not read the switch, and the kill line above is unchanged.
+
+**Product kill switch:** `SQL_GUIDANCE_ENABLED` (API process env; Nest `ConfigModule` loads it from `.env`).
+
+| Value | Product SQL system prompt |
+| --- | --- |
+| Unset, empty, `true`, or `1` | Default **on**. Append the frozen template after the schema-filled prompt, same as today. |
+| `false`, `0`, or `off` | **Off.** Skip `appendGuidanceAddendum`. Keep the schema-filled system prompt. |
+
+Matching is trim + case-insensitive. Any other value stays on, so a typo does not drop the addendum. The HumanMessage stays `问题：` plus `查询意图：` in both modes, including SQL retries. Set it on the API process and restart before a Lab e2e run. Example: `SQL_GUIDANCE_ENABLED=false` for the off arm, unset or `true` for the on arm. Docker Compose passes `${SQL_GUIDANCE_ENABLED:-true}` into the `api` service.
 
 The SQL HumanMessage is joined with blank lines:
 
@@ -105,11 +114,11 @@ The SQL HumanMessage is joined with blank lines:
 
 **CLEAR is not product lift.** The 2026-09-29 CLEAR (`LLM_MODEL=deepseek/deepseek-v4-pro`, report `benchmark/reports/guidance-ab/2026-09-29T03-43-53-909Z`, primary +9/17, secondary +5/7) proved the harness user prompt `问题：{question}` alone. Product now sends that line plus planner JSON. Product end-to-end lift stays a hypothesis until a product-path remeasure exists. `BI-L1-008` and `BI-L2-008` stay known residuals (FAIL on both arms).
 
-**Rollback (only path):** Revert PR #9. That removes the `buildSqlSystemPromptWithGuidance` call in `sqlGeneratorNode`. Owner: zhangjing.
+**Rollback:** For a Lab e2e on/off comparison or an emergency, set `SQL_GUIDANCE_ENABLED=false` (`0` and `off` also turn it off) and restart the API. Revert PR #9 is still the full wiring rollback: it removes the guidance call in `sqlGeneratorNode`. Owner: zhangjing.
 
 | Risk | Reading |
 | --- | --- |
-| Always-on guidance on non-target / out-of-distribution questions | Every product SQL generation gets the addendum, not only the target 7. CLEAR did not measure those questions. |
+| Default-on guidance on non-target / out-of-distribution questions | With `SQL_GUIDANCE_ENABLED` unset or on, every product SQL generation gets the addendum, not only the target 7. CLEAR did not measure those questions. `false` / `0` / `off` skips the addendum for a Lab compare or an emergency. |
 | MySQL gets the same body | CLEAR ran on the Postgres bench. MySQL product traffic uses dialect `MySQL` and the same template bytes, with no CLEAR evidence. |
 | Template overfit into prod traffic | The frozen rules target gold-20 agg / filter / grain residuals. They now run on live questions. |
 

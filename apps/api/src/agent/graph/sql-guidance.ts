@@ -5,6 +5,9 @@ import { SQL_SYSTEM_PROMPT } from './prompts';
 
 export const GUIDANCE_TEMPLATE_VERSION = 'guidance-intent-agg-grain-v1';
 
+/** Product kill switch. The guidance-ab harness does not read this. */
+export const SQL_GUIDANCE_ENABLED_ENV = 'SQL_GUIDANCE_ENABLED';
+
 export const GUIDANCE_TEMPLATE_REPO_PATH =
   'apps/api/src/agent/graph/templates/intent-aggregation-grain-v1.md';
 
@@ -68,6 +71,24 @@ export function fillSqlSystemPrompt(dialect: string, tableSchema: string): strin
     throw new Error('SQL_SYSTEM_PROMPT is missing {table_schema}');
   }
   return withDialect.slice(0, at) + tableSchema + withDialect.slice(at + SCHEMA_TOKEN.length);
+}
+
+/**
+ * Product SQL addendum switch. Default on.
+ * On: unset, empty, `true`, `1`. Off: `false`, `0`, `off` (trim, case-insensitive).
+ * Any other value stays on so a typo does not drop the addendum.
+ * Callers that must keep arm B (the guidance-ab harness) ignore this and call
+ * `appendGuidanceAddendum` directly.
+ */
+export function sqlGuidanceEnabledFromEnv(
+  env: NodeJS.Dict<string> = process.env,
+): boolean {
+  const raw = env[SQL_GUIDANCE_ENABLED_ENV];
+  if (raw === undefined) return true;
+  const value = raw.trim().toLowerCase();
+  if (value === '' || value === 'true' || value === '1') return true;
+  if (value === 'false' || value === '0' || value === 'off') return false;
+  return true;
 }
 
 /** `${filled}\n\n${body.trim()}\n` — the guidance-ab arm B addendum. */

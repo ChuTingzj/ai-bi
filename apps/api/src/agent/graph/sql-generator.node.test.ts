@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { loadGuidanceTemplate } from '../../../../../benchmark/guidance-ab/guidance';
 import { buildGuidanceAbSystemPrompt } from '../../../../../benchmark/guidance-ab/prompt';
 import { createNodes } from './nodes';
+import { fillSqlSystemPrompt } from './sql-guidance';
 import type { BiAgentState } from './state';
 
 function state(partial: Partial<BiAgentState>): BiAgentState {
@@ -119,5 +120,74 @@ describe('sqlGeneratorNode guidance addendum', () => {
     assert.equal(human.includes(`查询意图：${JSON.stringify(INTENT)}`), true);
     assert.equal(human.includes('上一次生成的 SQL：SELECT gmv FROM orders'), true);
     assert.equal(human.includes('上一次执行错误：column "gmv" does not exist'), true);
+  });
+});
+
+async function withSqlGuidanceEnv<T>(
+  value: string | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = process.env.SQL_GUIDANCE_ENABLED;
+  if (value === undefined) {
+    delete process.env.SQL_GUIDANCE_ENABLED;
+  } else {
+    process.env.SQL_GUIDANCE_ENABLED = value;
+  }
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.SQL_GUIDANCE_ENABLED;
+    } else {
+      process.env.SQL_GUIDANCE_ENABLED = previous;
+    }
+  }
+}
+
+describe('sqlGeneratorNode SQL_GUIDANCE_ENABLED', () => {
+  const retryState = {
+    sql_error: 'column "gmv" does not exist',
+    generated_sql: 'SELECT gmv FROM orders',
+  };
+
+  it('defaults on when SQL_GUIDANCE_ENABLED is unset', async () => {
+    const guidance = loadGuidanceTemplate();
+    const { system, human } = await withSqlGuidanceEnv(undefined, () =>
+      captureSqlMessages('POSTGRES', SCHEMA, retryState),
+    );
+    const armB = buildGuidanceAbSystemPrompt('guidance', SCHEMA, guidance.body);
+    assert.equal(system, armB);
+    assert.equal(human.startsWith(`问题：${QUESTION}`), true);
+    assert.equal(human.includes(`查询意图：${JSON.stringify(INTENT)}`), true);
+    assert.equal(human.includes('上一次执行错误：column "gmv" does not exist'), true);
+  });
+
+  it('appends guidance when SQL_GUIDANCE_ENABLED is true or 1', async () => {
+    const guidance = loadGuidanceTemplate();
+    const armB = buildGuidanceAbSystemPrompt('guidance', SCHEMA, guidance.body);
+    for (const value of ['true', '1', ' TRUE ']) {
+      const { system, human } = await withSqlGuidanceEnv(value, () =>
+        captureSqlMessages('POSTGRES', SCHEMA),
+      );
+      assert.equal(system, armB);
+      assert.equal(human, `问题：${QUESTION}\n\n查询意图：${JSON.stringify(INTENT)}`);
+    }
+  });
+
+  it('skips the addendum when SQL_GUIDANCE_ENABLED is false, 0, or off', async () => {
+    const guidance = loadGuidanceTemplate();
+    const schemaOnly = fillSqlSystemPrompt('PostgreSQL', SCHEMA);
+    const enabled = await withSqlGuidanceEnv('true', () =>
+      captureSqlMessages('POSTGRES', SCHEMA, retryState),
+    );
+    for (const value of ['false', '0', 'off', ' OFF ']) {
+      const { system, human } = await withSqlGuidanceEnv(value, () =>
+        captureSqlMessages('POSTGRES', SCHEMA, retryState),
+      );
+      assert.equal(system, schemaOnly);
+      assert.equal(system.includes(guidance.body.trim()), false);
+      assert.equal(system.includes('{table_schema}'), false);
+      assert.equal(human, enabled.human);
+    }
   });
 });
