@@ -68,26 +68,26 @@ Stage 1 使用 Stage 0 的产品路径 runner：编译后的图接受注入的 s
 
 ## 预注册决策表（Stage 1 门槛）
 
-全部 totals、lift 和 floor 只在 15 个 decision id 上计算，尽管 Stage 0 会跑完全部 20 题。Held-out 的 5 个只提供分类和否决。每臂 3 次。Lift 是 on 的 per-run totals 的中位数减去 off 的 per-run totals 的中位数。Noise floor 在噪声排除之后、最终 id 集合上计算，等于 off 各次 per-run totals 的极差与 on 各次 per-run totals 的极差中的较大者。PASS 用的就是这个 floor：`floor < 3` 且 lift ≥ `max(3, floor + 2)`。on 之前只能记下暂定 floor（仅 off 极差）；最终 floor 要等 on 跑完才知道。回归规则按 decision id 计：最多 1 个 id 在 off 里至少 2/3 次通过、在 on 里至少 2/3 次失败。
+全部 totals、lift 和 floor 只在 15 个 decision id 上计算，尽管 Stage 0 会跑完全部 20 题。Held-out 的 5 个只提供分类和否决。每臂 3 次。Lift 是 on 的 per-run totals 的中位数减去 off 的 per-run totals 的中位数。两份 floor 都要记进报告。`provisional floor` 只有 off 极差，在任何 on 运行之前记下。`final floor` 在噪声排除之后、on 跑完之后才知道，等于最终 id 集合上 off 各次 per-run totals 的极差与 on 各次 per-run totals 的极差中的较大者。PASS 用 `final floor`：`floor < 3` 且 lift ≥ `max(3, floor + 2)`。回归规则按 decision id 计：最多 1 个 id 在 off 里至少 2/3 次通过、在 on 里至少 2/3 次失败。
 
-**复用 Stage 0 的 3 次 off。** 复用条件成立时，这 3 次提供暂定的 off-only floor（off 极差）、lift 里的 off 中位数，以及否决用的 held-out off 中位数。最终 floor 还要并入 on 的极差。条件是：Stage 1 的 off prompt 与 Stage 0 逐字节相同；model、temperature 和已记录的 provider 参数相同；并且记录了 model version 字符串和运行时间戳。若 Stage 0 与 Stage 1 之间 model version 或任一 provider 参数变了，复用作废，必须在任何 on 运行之前另记 3 次 off。3 个样本是粗估计。
+**复用 Stage 0 的 3 次 off。** 复用条件成立时，这 3 次提供 `provisional floor`（仅 off 极差）、lift 里的 off 中位数，以及否决用的 held-out off 中位数。held-out 的 off 中位数也来自这批复用的 Stage 0 运行。`final floor` 还要并入 on 的极差。条件是：Stage 1 的 off prompt 与 Stage 0 逐字节相同；model、temperature 和已记录的 provider 参数相同；并且记录了 model version 字符串和运行时间戳。若 Stage 0 与 Stage 1 之间 model version 或任一 provider 参数变了，复用作废，必须在任何 on 运行之前另记 3 次 off，并据此重记 `provisional floor`、lift 的 off 中位数，以及 held-out 的 off 中位数。3 个样本是粗估计。
 
 噪声分类沿用已合并的 #8 guidance-ab harness，代码在 `benchmark/guidance-ab/kill-line.ts`。正则是 `LLM_TRANSPORT_NOISE = /^llm:\s*.*(?:operation was aborted|fetch failed)/i`。该文件的 `exclusionFor` 是 both-arm-only：两臂的 error 都匹配，该题才离开 N；只有一臂匹配则记为失败并留在 N。Postgres 的 `current transaction is aborted` 不匹配这条正则。
 
-本设计在 Stage 1 把这条正则用到两臂，用来识别基础设施、非 SQL 的 `noise`。排除规则与 #8 不同：某个 id 只要在任一臂的任一次运行里出现这类失败，就排除。decision id 与 held-out 的 5 个用同一条规则。排除按臂、按次报告，并记下被排除的 id。按臂记录 prompt 的 token 数。只因 on 臂噪声被排除的 id 数，若比只因 off 臂噪声被排除的 id 数多出至少 2，结果是 `REGRESSION-MIXED`（查延迟和 prompt 大小），不能是 `PASS`。floor 与 lift 都在排除后的最终 decision id 集合上计算：off 极差来自复用的 Stage 0 off（作废时用那 3 次新的 off），on 极差来自 on 运行，floor 取二者较大者。6 次运行加上「任一臂任一次即排除」，传输一抖动，decision id 掉到 12 个以下是相当可能的出口；那按设计就是 `INCONCLUSIVE`。
+本设计在 Stage 1 把这条正则用到两臂，用来识别基础设施、非 SQL 的 `noise`。排除规则与 #8 不同：某个 id 只要在任一臂的任一次运行里出现这类失败，就排除。decision id 与 held-out 的 5 个用同一条规则。剩下的 decision id 少于 12 则为 `INCONCLUSIVE`。这条规则是故意取代更早的 `no denominator edits`（不改分母）：传输抖动不是处理效应，不该留在分母里冒充效果；排除个数按臂报告，用来抓住和处理相关的流失。排除按臂、按次报告，并记下被排除的 id。按臂记录 prompt 的 token 数。只因 on 臂噪声被排除的 id 数，若比只因 off 臂噪声被排除的 id 数多出至少 2，结果是 `REGRESSION-MIXED`（查延迟和 prompt 大小），不能是 `PASS`。`final floor` 与 lift 都在排除后的最终 decision id 集合上计算：off 极差来自复用的 Stage 0 off（作废时用那 3 次新的 off），on 极差来自 on 运行，`final floor` 取二者较大者。6 次运行加上「任一臂任一次即排除」，传输一抖动，decision id 掉到 12 个以下是相当可能的出口；那按设计就是 `INCONCLUSIVE`。
 
-先做噪声排除，再在最终集合上算 lift 和最终 floor，然后按下表。decision id 少于 12 则直接 `INCONCLUSIVE`，到此停止，不用排除差额改判。否则，只因 on 排除的个数比只因 off 排除的个数多至少 2，则直接 `REGRESSION-MIXED`，不能 `PASS`。例：排除之后 off 极差为 1、on 极差为 2，则 floor = `max(1, 2) = 2`，需要 lift +4，因为 `max(3, floor + 2) = 4`。两臂极差的较大者为 0 或 1 时，需要 lift +3，因为 `max(3, 0 + 2) = 3`，`max(3, 1 + 2) = 3`。
+先做噪声排除，再在最终集合上算 lift 和 `final floor`，然后按下表。decision id 少于 12 则直接 `INCONCLUSIVE`，到此停止，不用排除差额改判。否则，只因 on 排除的个数比只因 off 排除的个数多至少 2，则直接 `REGRESSION-MIXED`，不能 `PASS`。例：排除之后 off 极差为 1、on 极差为 2，则 `final floor` = `max(1, 2) = 2`，需要 lift +4，因为 `max(3, floor + 2) = 4`。两臂极差的较大者为 0 或 1 时，需要 lift +3，因为 `max(3, 0 + 2) = 3`，`max(3, 1 + 2) = 3`。`provisional floor` 不参与这张表。
 
 | 结果 | 条件 | 之后 |
 | --- | --- | --- |
-| PASS | 最终 floor（两臂极差的较大者）`< 3`，且 lift ≥ `max(3, floor + 2)`，且回归规则成立，且 held-out 否决未触发，且只因 on 排除的 id 数未比只因 off 排除的 id 数多出 2 个及以上 | 可以决定是否做 Stage 2 的 migration |
-| INCONCLUSIVE | 按上述定义 `floor ≥ 3`，不论 lift（这是故意的）；或噪声排除后 decision id 少于 12。6 次运行、任一臂任一次即排除时，抖动导致少于 12 是相当可能的出口，按设计结束 | 不 ship，不 kill，停止。再试需要一份新的预注册设计。没有更大的题集：gold-20 就是 15+5 |
-| KILL | `floor < 3`，且 lift < `max(3, floor + 2)` | 不做 Stage 2 的 migration |
-| REGRESSION-MIXED | `floor < 3` 且 lift 达到门槛，但回归规则被违反，或 held-out 否决触发；或只因 on 排除的 id 数比只因 off 排除的 id 数多至少 2（查延迟和 prompt 大小）。后一种不能判成 PASS | 不 ship，先查 |
+| PASS | `final floor < 3`，且 lift ≥ `max(3, floor + 2)`，且回归规则成立，且 held-out 否决未触发，且只因 on 排除的 id 数未比只因 off 排除的 id 数多出 2 个及以上 | 可以决定是否做 Stage 2 的 migration |
+| INCONCLUSIVE | `final floor ≥ 3`，不论 lift（这是故意的）；或噪声排除后 decision id 少于 12。6 次运行、任一臂任一次即排除时，抖动导致少于 12 是相当可能的出口，按设计结束 | 不 ship，不 kill，停止。再试需要一份新的预注册设计。没有更大的题集：gold-20 就是 15+5 |
+| KILL | `final floor < 3`，且 lift < `max(3, floor + 2)` | 不做 Stage 2 的 migration |
+| REGRESSION-MIXED | `final floor < 3` 且 lift 达到门槛，但回归规则被违反，或 held-out 否决触发；或只因 on 排除的 id 数比只因 off 排除的 id 数多至少 2（查延迟和 prompt 大小）。后一种不能判成 PASS | 不 ship，先查 |
 
 因为 lift 的门槛至少是 3，对 per-total 做非劣效检验是空的。回归规则按 id 计，作用在头条数字上。
 
-Held-out 否决用排除之后的 per-run totals：on 的中位数比 off 的中位数更差，且差值大于 1（中位数对中位数，与 lift 同一算法）。这 5 个 id 永不进入头条，也永不报成 20 个 id 的数字。（a）也不进入任何头条。两臂其余一切钉死相同。guidance 自己的产品提升仍未测量，因此结果只在 guidance 打开时成立。
+Held-out 否决用排除之后的 per-run totals：on 的中位数比 off 的中位数更差，且差值大于 1（中位数对中位数，与 lift 同一算法）。off 中位数来自复用的 Stage 0 运行；复用作废时，随新的 3 次 off 重记。这 5 个 id 永不进入头条，也永不报成 20 个 id 的数字。（a）也不进入任何头条。两臂其余一切钉死相同。guidance 自己的产品提升仍未测量，因此结果只在 guidance 打开时成立。
 
 Stage 1 是单一 model、单一 bench，没有真实目标 datasource，不是端到端的产品测量。ship 之前仍必须在真实目标上重测产品路径。它只决定要不要做 Stage 2 的 migration。
 
