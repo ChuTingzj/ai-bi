@@ -16,7 +16,9 @@
     "benchmark:setup": "tsx benchmark/scripts/setup.ts",
     "benchmark:run": "pnpm --filter @ai-bi/api benchmark:run",
     "benchmark:schema-ab": "tsx benchmark/schema-ab/cli.ts",
-    "benchmark:schema-ab:test": "tsx --test benchmark/schema-ab/schema-ab.test.ts"
+    "benchmark:schema-ab:test": "tsx --test benchmark/schema-ab/schema-ab.test.ts",
+    "benchmark:guidance-ab": "tsx benchmark/guidance-ab/cli.ts",
+    "benchmark:guidance-ab:test": "tsx --test benchmark/guidance-ab/guidance-ab.test.ts"
   },
   "devDependencies": {
     "@ai-bi/db": "workspace:*",
