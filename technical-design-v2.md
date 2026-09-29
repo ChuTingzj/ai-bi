@@ -1363,7 +1363,7 @@ User:
 {sql_error ? "上一次生成的 SQL：" + generated_sql + "\n\n上一次执行错误：" + sql_error : ""}
 ```
 
-`question` 来自图状态里的原始问题。系统提示在 `{table_schema}` 之后附加冻结模板 `apps/api/src/agent/graph/templates/intent-aggregation-grain-v1.md`（`guidance-intent-agg-grain-v1`），调用点是 `sqlGeneratorNode` 里的 `buildSqlSystemPromptWithGuidance`。用户消息同时带 `问题：` 与 `查询意图：`，B1/B2 的提示形状缺口已补上。2026-09-29 guidance-ab CLEAR 仍只覆盖 harness 单独的 `问题：{question}`，没有重测「问题 + 规划 JSON」。产品端到端提升仍是假设。`BI-L1-008` 与 `BI-L2-008` 在两臂均为 FAIL。回滚只 revert PR #9（负责人 zhangjing）。无环境变量开关。
+`question` 来自图状态里的原始问题。系统提示在 `{table_schema}` 之后附加冻结模板 `apps/api/src/agent/graph/templates/intent-aggregation-grain-v1.md`（`guidance-intent-agg-grain-v1`）。调用点是 `sqlGeneratorNode`：`SQL_GUIDANCE_ENABLED` 未设置、为空、`true` 或 `1` 时（默认开）走 `appendGuidanceAddendum`；`false`、`0` 或 `off` 时跳过附加，只保留填好 schema 的系统提示。用户消息在开与关时都是 `问题：` 加 `查询意图：`。Lab 对比或紧急关闭时设 `SQL_GUIDANCE_ENABLED=false` 并重启 API。guidance-ab harness 不读该变量。2026-09-29 guidance-ab CLEAR 仍只覆盖 harness 单独的 `问题：{question}`，没有重测「问题 + 规划 JSON」。产品端到端提升仍是假设。`BI-L1-008` 与 `BI-L2-008` 在两臂均为 FAIL。完整拆除接线仍 revert PR #9（负责人 zhangjing）。
 
 #### 5.6.3 Review Agent（sqlExecutorNode 实现，非 LLM）
 

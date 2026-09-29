@@ -19,8 +19,10 @@ import {
 } from './prompts';
 import {
   buildSqlSystemPromptWithGuidance,
+  fillSqlSystemPrompt,
   formatSqlQuestionLine,
   loadGuidanceTemplate,
+  sqlGuidanceEnabledFromEnv,
 } from './sql-guidance';
 
 function messageContentToText(content: unknown): string {
@@ -145,12 +147,13 @@ export function createNodes(deps: NodeDeps) {
     });
     const dialect = dataSource?.type === 'MYSQL' ? 'MySQL' : 'PostgreSQL';
 
-    const guidance = loadGuidanceTemplate();
-    const systemPrompt = buildSqlSystemPromptWithGuidance(
-      dialect,
-      state.table_schema,
-      guidance.body,
-    );
+    const systemPrompt = sqlGuidanceEnabledFromEnv()
+      ? buildSqlSystemPromptWithGuidance(
+          dialect,
+          state.table_schema,
+          loadGuidanceTemplate().body,
+        )
+      : fillSqlSystemPrompt(dialect, state.table_schema);
     const userParts = [
       formatSqlQuestionLine(state.question),
       `查询意图：${JSON.stringify(state.intent)}`,
