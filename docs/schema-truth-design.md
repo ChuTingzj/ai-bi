@@ -6,6 +6,15 @@
 
 **任何未来 flag 默认 OFF。** 未显式打开时，产品路径必须与今天相同。这与 `SQL_GUIDANCE_ENABLED` 相反：后者是默认 ON 的 kill switch（未设置、空、`true`、`1` 为开；`false`、`0`、`off` 为关）。
 
+## 每次运行之前必须已有的提交
+
+| 提交 | 挡住哪一次运行 |
+| --- | --- |
+| `rubric_commit` | Stage 0 的计分运行，以及其后的 Stage 1。冻结 rubric、阈值、`tiktoken` 的 `cl100k_base`，以及可选的那一条传输重试 |
+| `decision_table_commit` | Stage 0 与 Stage 1 的任何计分运行。冻结本文决策表和表下的判定顺序 |
+| `seam` PR | Stage 1。Stage 0 不注入 schema，不用这个 PR |
+| `renderer_spec_commit` | 只在入口通过之后才做。挡住把 Stage 0 逐 id 结果交给设计者，以及 Stage 1 的 renderer 运行 |
+
 ## 不能当作本项目证据的数字
 
 2026-09-24 的 schema-dump A/B（gold-20，结果 +3/20，kill line +4/20）只测了裸 `INFORMATION_SCHEMA` 的表名、列名和类型文本。它对 FK / join 的价值没有结论。
@@ -44,9 +53,9 @@ Lab 的 6/7 对 2/7，以及 harness 的 CLEAR 数字，都不是本项目的证
 
 Runner 驱动真实编译后的图，覆盖 planner、intent JSON、DDL 切片和 retry。题目集是 gold-20，prompt 用当前产品提示。钉死 `SQL_GUIDANCE_ENABLED=true`，钉死 model 和 temperature，并记录实际 provider 参数（provider 可能忽略 seed），同时记录 model version 字符串和每次运行的时间戳。首次尝试的捕获只在 runner 里包一层 `sandbox.execute`，不给产品加埋点。只跑 off 臂，3 次；每一次都报告 per-run totals。决策用的 totals 只算 15 个 decision id；held-out 的 per-run totals 只留给分类和后面的否决。
 
-Runner PR 把 rubric 和阈值放在单独的、更早的一次提交里。该提交的前提是：Stage 0 已从 `ffp-sql-sandbox` 原样抓到一条真实的未定义表错误，和一条真实的未定义列错误，并写进该提交。任何计分运行之前，把该提交的 sha 写回本文：`rubric_commit` = （运行前填写）。Runner PR 同时冻结本文决策表文本的 sha，也在任何运行之前写回：`decision_table_commit` = （运行前填写）。
+Runner PR 把 rubric 和阈值放在单独的、更早的一次提交里。该提交的前提是：Stage 0 已从 `ffp-sql-sandbox` 原样抓到一条真实的未定义表错误，和一条真实的未定义列错误，并写进该提交。这两条也用来确认下面的回退正则。任何计分运行之前，把该提交的 sha 写回本文：`rubric_commit` = （运行前填写）。同一提交冻结 token 计数：用 `tiktoken` 的 `cl100k_base`，只做两臂对比。也可以在其中预先写上一条 runner 级重试，并且必须在 Stage 0 之前写死，用来减少传输抖动把结果送进 `INCONCLUSIVE`：某题出现传输噪声时，只重跑这一题一次，两臂相同，并记下这次重试。用或不用都写在 `rubric_commit` 里，开跑之后不能再加。Runner PR 同时冻结本文决策表文本的 sha，也在任何运行之前写回：`decision_table_commit` = （运行前填写）。
 
-计数（a）和（b）都只覆盖这 15 个 decision id，held-out 的 5 个不计入，尽管 Stage 0 会跑完全部 gold-20。（a）在 3 次里至少 2 次、首次尝试就出现 `undefined-ref` 的不同 id 数，只作背景，不用于任何决策，也永不出现在任何头条里。（b）在 3 次里至少 2 次、重试后仍未恢复的 `undefined-ref` 的不同 id 数。`undefined-ref` 的客观判定看首次尝试的错误对象或错误字符串：若其中有 SQLSTATE `42P01` 或 `42703`，即是；否则当消息匹配 `/(relation|table|column) ".+" does not exist/i` 时也是。每一次失败都按 rubric 分类，并且对实验臂盲：`undefined-ref`、`wrong join key`、`PK-related`、nullability、view 与 table 混淆、被截断的切片、`agg/filter`、`gold-ambiguous`、`noise`。其中 renderer-delta 类是 `PK-related`、nullability、view 与 table 混淆、被截断的切片。Stage 0 只有 off，盲分类规则仍照写，供 Stage 1 复用。
+计数（a）和（b）都只覆盖这 15 个 decision id，held-out 的 5 个不计入，尽管 Stage 0 会跑完全部 gold-20。（a）在 3 次里至少 2 次、首次尝试就出现 `undefined-ref` 的不同 id 数，只作背景，不用于任何决策，也永不出现在任何头条里。（b）在 3 次里至少 2 次、重试后仍未恢复的 `undefined-ref` 的不同 id 数。`undefined-ref` 的客观判定看首次尝试的错误对象或错误字符串：若其中有 SQLSTATE `42P01` 或 `42703`，即是；否则当消息匹配 `/(relation|table|column) "?[\w.]+"? does not exist/i` 时也是。引号可有可无，这样不带引号的限定列名也能对上。Stage 0 抓到的那两条原样错误用来确认这条回退正则：没有 SQLSTATE 时，两条都应匹配。每一次失败都按 rubric 分类，并且对实验臂盲：`undefined-ref`、`wrong join key`、`PK-related`、nullability、view 与 table 混淆、被截断的切片、`agg/filter`、`gold-ambiguous`、`noise`。其中 renderer-delta 类是 `PK-related`、nullability、view 与 table 混淆、被截断的切片。Stage 0 只有 off，盲分类规则仍照写，供 Stage 1 复用。
 
 同时报告：bench 的 FK / PK 覆盖；bench DDL 大小相对 8000 字符切片；已连接 datasource 的 FK / PK 覆盖，只报计数。
 
@@ -58,36 +67,43 @@ Runner PR 把 rubric 和阈值放在单独的、更早的一次提交里。该�
 
 Stage 1 使用 Stage 0 的产品路径 runner：编译后的图接受注入的 schema 文本。不在 #8 的 guidance-ab harness 里跑。下一节的数字门槛必须在第一次 Stage 1 运行之前提交；本文就是这份预注册，改门槛必须先有新的提交。
 
-**入口。** 一个 decision id 的失败类，是它 3 次运行的失败类的众数（通过的那次没有失败类，不参与）。平局不算 renderer-delta。该 id 计入，当它在 3 次里至少 2 次失败，且这个众数是 renderer-delta 类（`PK-related`、nullability、view 与 table 混淆、被截断的切片）。仅当这样的不同 id 至少有 3 个（15 个 decision id，不含 held-out）才进入。否则记下 `renderer has no addressable failures on this bench` 并停止，等真实目标上的普查。若 bench 上 FK 为空，join / FK 记为 `untested on this bench, deferred to a real-target census`，不记为零价值。
+**入口。** 入口由盲分类 agent 或用户判定，不能由设计 renderer 的人判定：设计者在 spec 冻结之前不能看逐 id 结果。设计者只收到入口的通过或失败，以及计入的 decision id 个数。一个 decision id 的失败类，是它 3 次运行的失败类的众数（通过的那次没有失败类，不参与）。平局不算 renderer-delta。该 id 计入，当它在 3 次里至少 2 次失败，且这个众数是 renderer-delta 类（`PK-related`、nullability、view 与 table 混淆、被截断的切片）。仅当这样的不同 id 至少有 3 个（15 个 decision id，不含 held-out）才进入。否则记下 `renderer has no addressable failures on this bench` 并停止，等真实目标上的普查。若 bench 上 FK 为空，join / FK 记为 `untested on this bench, deferred to a real-target census`，不记为零价值。
 
 **接缝。** 接缝单独一个 PR，单独评审。在拿出证据之前，它是唯一允许的产品代码改动。planner 和 `sqlGeneratorNode` 接受注入的 schema 文本，两处施加方式相同。优先依赖注入或可选参数。环境变量接缝本身就是一个 flag，必须默认 OFF。不用接缝时它必须是惰性的。Golden test：接缝不用时，prompt 与今天逐字节相同。8000 字符预算按表边界切在 renderer 的输出上。
 
 **兼容。** renderer 的输出必须通过与 planner 相同的行过滤（`CREATE TABLE` 或 `^--` 行）以及相同的 `schemaFetcherNode` 块解析，并在 bench schema 上验证。若过不了，就改用同一套替换用的过滤器和切片器，并且对两臂注入的文本做完全相同的施加。`--` hints 和 enum comments 保留，形状与 `schemaDoc` 相同，因此丢掉它们不能成为混淆因素。
 
-**Renderer spec。** 在把 Stage 0 的逐 id 结果交给设计 renderer 的 agent 之前，renderer spec 冻结为一次提交。字段是：PK、nullability、view kind、每条边的列名、按表边界切片。格式规则包括上面的 `--` hints 和 enum comments。结果里记录 `renderer_spec_commit` = （结果里填写）。结果出来之后再改这份 spec，本次预注册作废，必须另有一次新的提交。
+**Renderer spec。** `renderer_spec_commit` 成本低，而且只在入口通过之后才做。在把 Stage 0 的逐 id 结果交给设计 renderer 的 agent 之前，renderer spec 冻结为这次提交。字段是：PK、nullability、view kind、每条边的列名、按表边界切片。格式规则包括上面的 `--` hints 和 enum comments。结果里记录 `renderer_spec_commit` = （结果里填写）。结果出来之后再改这份 spec，本次预注册作废，必须另有一次新的提交。
 
 ## 预注册决策表（Stage 1 门槛）
 
-全部 totals、lift 和 floor 只在 15 个 decision id 上计算，尽管 Stage 0 会跑完全部 20 题。Held-out 的 5 个只提供分类和否决。每臂 3 次。Lift 是 on 的 per-run totals 的中位数减去 off 的 per-run totals 的中位数。两份 floor 都要记进报告。`provisional floor` 只有 off 极差，在任何 on 运行之前记下。`final floor` 在噪声排除之后、on 跑完之后才知道，等于最终 id 集合上 off 各次 per-run totals 的极差与 on 各次 per-run totals 的极差中的较大者。PASS 用 `final floor`：`floor < 3` 且 lift ≥ `max(3, floor + 2)`。回归规则按 decision id 计：最多 1 个 id 在 off 里至少 2/3 次通过、在 on 里至少 2/3 次失败。
+全部 totals、lift 和 floor 只在 15 个 decision id 上计算，尽管 Stage 0 会跑完全部 20 题。Held-out 的 5 个只提供分类和否决。每臂 3 次。Lift 是 on 的 per-run totals 的中位数减去 off 的 per-run totals 的中位数。两份 floor 都要记进报告。`provisional floor` 只有 off 极差，在任何 on 运行之前记下。`final floor` 在噪声排除之后、on 跑完之后才知道，等于最终 id 集合上 off 各次 per-run totals 的极差与 on 各次 per-run totals 的极差中的较大者。比较用的是 `final floor`，门槛是 `max(3, floor + 2)`。判哪一个结果只看表下的顺序。回归规则按 decision id 计：最多 1 个 id 在 off 里至少 2/3 次通过、在 on 里至少 2/3 次失败。
 
 **复用 Stage 0 的 3 次 off。** 复用条件成立时，这 3 次提供 `provisional floor`（仅 off 极差）、lift 里的 off 中位数，以及否决用的 held-out off 中位数。held-out 的 off 中位数也来自这批复用的 Stage 0 运行。`final floor` 还要并入 on 的极差。条件是：Stage 1 的 off prompt 与 Stage 0 逐字节相同；model、temperature 和已记录的 provider 参数相同；并且记录了 model version 字符串和运行时间戳。若 Stage 0 与 Stage 1 之间 model version 或任一 provider 参数变了，复用作废，必须在任何 on 运行之前另记 3 次 off，并据此重记 `provisional floor`、lift 的 off 中位数，以及 held-out 的 off 中位数。3 个样本是粗估计。
 
-噪声分类沿用已合并的 #8 guidance-ab harness，代码在 `benchmark/guidance-ab/kill-line.ts`。正则是 `LLM_TRANSPORT_NOISE = /^llm:\s*.*(?:operation was aborted|fetch failed)/i`。该文件的 `exclusionFor` 是 both-arm-only：两臂的 error 都匹配，该题才离开 N；只有一臂匹配则记为失败并留在 N。Postgres 的 `current transaction is aborted` 不匹配这条正则。
+噪声分类沿用已合并的 #8 guidance-ab harness，代码在 `benchmark/guidance-ab/kill-line.ts`。正则是 `LLM_TRANSPORT_NOISE = /^llm:\s*.*(?:operation was aborted|fetch failed)/i`，以 `^llm:` 锚定。该文件的 `exclusionFor` 是 both-arm-only：两臂的 error 都匹配，该题才离开 N；只有一臂匹配则记为失败并留在 N。Postgres 的 `current transaction is aborted` 不匹配这条正则。Runner 必须在第一次真实的 abort 上确认传输错误带 `^llm:` 前缀，并原样记下那条字符串。对不上的传输失败会算成真实失败，从而抬高 floor。
 
-本设计在 Stage 1 把这条正则用到两臂，用来识别基础设施、非 SQL 的 `noise`。排除规则与 #8 不同：某个 id 只要在任一臂的任一次运行里出现这类失败，就排除。decision id 与 held-out 的 5 个用同一条规则。剩下的 decision id 少于 12 则为 `INCONCLUSIVE`。这条规则是故意取代更早的 `no denominator edits`（不改分母）：传输抖动不是处理效应，不该留在分母里冒充效果；排除个数按臂报告，用来抓住和处理相关的流失。排除按臂、按次报告，并记下被排除的 id。按臂记录 prompt 的 token 数。只因 on 臂噪声被排除的 id 数，若比只因 off 臂噪声被排除的 id 数多出至少 2，结果是 `REGRESSION-MIXED`（查延迟和 prompt 大小），不能是 `PASS`。`final floor` 与 lift 都在排除后的最终 decision id 集合上计算：off 极差来自复用的 Stage 0 off（作废时用那 3 次新的 off），on 极差来自 on 运行，`final floor` 取二者较大者。6 次运行加上「任一臂任一次即排除」，传输一抖动，decision id 掉到 12 个以下是相当可能的出口；那按设计就是 `INCONCLUSIVE`。
+本设计在 Stage 1 把这条正则用到两臂，用来识别基础设施、非 SQL 的 `noise`。排除规则与 #8 不同：某个 id 只要在任一臂的任一次运行里出现这类失败，就排除。decision id 与 held-out 的 5 个用同一条规则。这条规则是故意取代更早的 `no denominator edits`（不改分母）：传输抖动不是处理效应，不该留在分母里冒充效果；排除个数按臂报告，用来抓住和处理相关的流失。排除按臂、按次报告，并记下被排除的 id。按臂记录 prompt 的 token 数，计数器是上面的 `cl100k_base`。`final floor` 与 lift 都在排除后的最终 decision id 集合上计算：off 极差来自复用的 Stage 0 off（作废时用那 3 次新的 off），on 极差来自 on 运行，`final floor` 取二者较大者。6 次运行加上「任一臂任一次即排除」，传输一抖动，decision id 掉到 12 个以下是相当可能的出口；那就是判定顺序的第 (1) 步。
 
-先做噪声排除，再在最终集合上算 lift 和 `final floor`，然后按下表。decision id 少于 12 则直接 `INCONCLUSIVE`，到此停止，不用排除差额改判。否则，只因 on 排除的个数比只因 off 排除的个数多至少 2，则直接 `REGRESSION-MIXED`，不能 `PASS`。例：排除之后 off 极差为 1、on 极差为 2，则 `final floor` = `max(1, 2) = 2`，需要 lift +4，因为 `max(3, floor + 2) = 4`。两臂极差的较大者为 0 或 1 时，需要 lift +3，因为 `max(3, 0 + 2) = 3`，`max(3, 1 + 2) = 3`。`provisional floor` 不参与这张表。
+先做噪声排除，再在最终集合上算 lift 和 `final floor`。下表只是摘要，指向表下的顺序。例：若顺序走到第 (4) 步，排除之后 off 极差为 1、on 极差为 2，则 `final floor` = `max(1, 2) = 2`，门槛是 lift +4，因为 `max(3, floor + 2) = 4`。两臂极差的较大者为 0 或 1 时，门槛是 lift +3，因为 `max(3, 0 + 2) = 3`，`max(3, 1 + 2) = 3`。`provisional floor` 不参与这张表。
 
-| 结果 | 条件 | 之后 |
+| 结果 | 摘要（只看表下顺序） | 之后 |
 | --- | --- | --- |
-| PASS | `final floor < 3`，且 lift ≥ `max(3, floor + 2)`，且回归规则成立，且 held-out 否决未触发，且只因 on 排除的 id 数未比只因 off 排除的 id 数多出 2 个及以上 | 可以决定是否做 Stage 2 的 migration |
-| INCONCLUSIVE | `final floor ≥ 3`，不论 lift（这是故意的）；或噪声排除后 decision id 少于 12。6 次运行、任一臂任一次即排除时，抖动导致少于 12 是相当可能的出口，按设计结束 | 不 ship，不 kill，停止。再试需要一份新的预注册设计。没有更大的题集：gold-20 就是 15+5 |
-| KILL | `final floor < 3`，且 lift < `max(3, floor + 2)` | 不做 Stage 2 的 migration |
-| REGRESSION-MIXED | `final floor < 3` 且 lift 达到门槛，但回归规则被违反，或 held-out 否决触发；或只因 on 排除的 id 数比只因 off 排除的 id 数多至少 2（查延迟和 prompt 大小）。后一种不能判成 PASS | 不 ship，先查 |
+| INCONCLUSIVE | (1) 排除后 decision id 少于 12；或 (2) `final floor ≥ 3`，不论 lift | 不 ship，不 kill，停止。再试需要一份新的预注册设计。没有更大的题集：gold-20 就是 15+5 |
+| REGRESSION-MIXED | (3) 只因 on 排除的 id 比只因 off 排除的多至少 2，压过 PASS 和 KILL；或 (4) 在 `final floor < 3` 时 lift 达到门槛，但回归规则被违反或 held-out 否决触发 | 不 ship，先查。顺序 (3) 查延迟和 prompt 大小 |
+| PASS | (4) `final floor < 3`，且 lift ≥ `max(3, floor + 2)`，且回归规则成立，且否决未触发 | 可以决定是否做 Stage 2 的 migration |
+| KILL | (4) `final floor < 3`，且 lift < `max(3, floor + 2)` | 不做 Stage 2 的 migration |
+
+**判定顺序。** 从上到下，命中即停止。每个结果只有一个判决。
+
+1. 噪声排除之后 decision id 少于 12：`INCONCLUSIVE`，停止。
+2. 否则 `final floor ≥ 3`：`INCONCLUSIVE`。这是故意的，不论 lift。
+3. 否则，只因 on 排除的 id 数比只因 off 排除的 id 数多至少 2：`REGRESSION-MIXED`。这一步压过 PASS，也压过 KILL。查延迟和 prompt 大小。
+4. 否则，此时 `final floor < 3`。lift ≥ `max(3, floor + 2)`，且回归规则成立，且 held-out 否决未触发：`PASS`。lift 达到门槛，但回归规则被违反，或 held-out 否决触发：`REGRESSION-MIXED`。这一条带 `final floor < 3`。lift 低于门槛：`KILL`。
 
 因为 lift 的门槛至少是 3，对 per-total 做非劣效检验是空的。回归规则按 id 计，作用在头条数字上。
 
-Held-out 否决用排除之后的 per-run totals：on 的中位数比 off 的中位数更差，且差值大于 1（中位数对中位数，与 lift 同一算法）。off 中位数来自复用的 Stage 0 运行；复用作废时，随新的 3 次 off 重记。这 5 个 id 永不进入头条，也永不报成 20 个 id 的数字。（a）也不进入任何头条。两臂其余一切钉死相同。guidance 自己的产品提升仍未测量，因此结果只在 guidance 打开时成立。
+Held-out 否决用排除之后的 per-run totals：on 的中位数比 off 的中位数更差，且差值大于 1（中位数对中位数，与 lift 同一算法）。off 中位数来自复用的 Stage 0 运行；复用作废时，随新的 3 次 off 重记。排除之后剩下的 held-out id 少于 3 时，否决为 n/a，报告里写明，并且不算触发。这 5 个 id 永不进入头条，也永不报成 20 个 id 的数字。（a）也不进入任何头条。两臂其余一切钉死相同。guidance 自己的产品提升仍未测量，因此结果只在 guidance 打开时成立。
 
 Stage 1 是单一 model、单一 bench，没有真实目标 datasource，不是端到端的产品测量。ship 之前仍必须在真实目标上重测产品路径。它只决定要不要做 Stage 2 的 migration。
 
