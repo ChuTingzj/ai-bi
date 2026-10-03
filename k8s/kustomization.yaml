@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ai-bi
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: ai-bi
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres.yaml
+  - mysql.yaml
+  - api.yaml
+  - web.yaml
+
+secretGenerator:
+  - name: ai-bi-secrets
+    envs:
+      - secrets.env
+
+images:
+  - name: chuting/ai-bi-api
+    newTag: latest
+  - name: chuting/ai-bi-web
+    newTag: latest

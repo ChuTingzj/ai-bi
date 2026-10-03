@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-bi-web
+  labels:
+    app: ai-bi-web
+spec:
+  type: NodePort
+  selector:
+    app: ai-bi-web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      nodePort: 30000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-bi-web
+  labels:
+    app: ai-bi-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-bi-web
+  template:
+    metadata:
+      labels:
+        app: ai-bi-web
+    spec:
+      containers:
+        - name: web
+          image: chuting/ai-bi-web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            # next.config.ts 的 /api 反向代理在 next build 时固化，镜像需以同值的
+            # --build-arg NEXT_PUBLIC_API_URL 构建；这里供运行时的 SSE 代理读取
+            - name: NEXT_PUBLIC_API_URL
+              value: http://ai-bi-api:4000
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
