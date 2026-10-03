@@ -1,5 +1,5 @@
 FROM node:20-alpine AS base
-RUN corepack enable pnpm
+RUN apk add --no-cache openssl && corepack enable pnpm
 
 FROM base AS builder
 WORKDIR /repo
@@ -7,7 +7,7 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
 COPY packages ./packages
 COPY apps/api ./apps/api
 RUN pnpm install --frozen-lockfile || pnpm install
-RUN pnpm --filter @ai-bi/db generate
+RUN pnpm --filter @ai-bi/db exec prisma generate
 RUN pnpm --filter @ai-bi/api build
 
 FROM base AS runner
